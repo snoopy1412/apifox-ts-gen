@@ -1,6 +1,6 @@
 {
   "name": "apifox-ts-gen",
-  "version": "1.0.0",
+  "version": "0.0.1",
   "description": "从 Apifox OpenAPI 规范生成 TypeScript 类型定义",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
@@ -24,7 +24,8 @@
     "build": "tsup",
     "dev": "ts-node src/cli.ts --no-interactive",
     "watch": "tsup --watch",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "pnpm run build",
+    "postversion": "git push && git push --tags"
   },
   "keywords": [
     "apifox",
