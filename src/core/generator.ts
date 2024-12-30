@@ -22,12 +22,37 @@ export interface GenerateOptions {
 // 添加一个新的类型来跟踪已处理的引用
 type ProcessedRefs = Set<string>;
 
+function handleRecursiveType(
+  typeName: string,
+  schema: any,
+  indent: string,
+  schemas: any,
+  processedRefs: ProcessedRefs
+): string {
+  // 如果已经处理过这个类型，直接返回类型名称
+  if (processedRefs.has(typeName)) {
+    return `${typeName}`;
+  }
+
+  // 标记该类型正在处理中
+  processedRefs.add(typeName);
+
+  // 生成类型定义
+  return `{\n${generateTypeProps(
+    schema,
+    indent + "  ",
+    schemas,
+    processedRefs
+  )}\n${indent}}`;
+}
+
 function generateTypeProps(
   schema: any,
   indent = "",
   schemas?: any,
   processedRefs: ProcessedRefs = new Set(),
-  depth = 0
+  depth = 0,
+  typeDefinitions = { value: "" }
 ): string {
   // 防止过深递归
   const MAX_DEPTH = 10;
@@ -66,7 +91,6 @@ function generateTypeProps(
 
   // 处理数组类型
   if (schema.type === "array") {
-    // 首先检查 schema.items 是否存在
     if (!schema.items) {
       console.warn("Array schema missing items definition:", schema);
       return `${indent}any[]`;
@@ -76,19 +100,30 @@ function generateTypeProps(
     if (schema.items.$ref) {
       const itemType = schema.items.$ref.split("/").pop();
       if (schemas && schemas[itemType]) {
-        if (processedRefs.has(itemType)) {
+        // 检查是否是递归类型
+        const isRecursive = processedRefs.has(itemType);
+        if (isRecursive) {
+          // 如果是递归类型，直接使用类型名称
           return `${indent}${itemType}[]`;
         }
-        processedRefs.add(itemType);
-        return `${indent}{\n${generateTypeProps(
-          schemas[itemType],
-          indent + "  ",
-          schemas,
-          processedRefs,
-          depth + 1
-        )}\n${indent}}[]`;
+
+        // 生成接口定义（如果还没有）
+        if (!processedRefs.has(`interface:${itemType}`)) {
+          processedRefs.add(`interface:${itemType}`);
+          typeDefinitions.value = `interface ${itemType} ${handleRecursiveType(
+            itemType,
+            schemas[itemType],
+            "",
+            schemas,
+            new Set([...processedRefs])
+          )}\n\n${typeDefinitions.value}`;
+        }
+
+        return `${indent}${itemType}[]`;
       }
-      return `${indent}${itemType}[]`;
+      // 如果找不到引用的类型，使用空对象类型
+      console.warn(`Referenced type ${itemType} not found, using empty object`);
+      return `${indent}{}[]`;
     }
 
     // 处理对象类型的数组项
@@ -224,25 +259,77 @@ function generateTypeProps(
   return `${indent}any`;
 }
 
+function shouldUseTypeInsteadOfInterface(schema: any): boolean {
+  // 如果是基本类型，直接使用 type
+  if (
+    typeof schema === "string" ||
+    typeof schema === "number" ||
+    typeof schema === "boolean"
+  ) {
+    return true;
+  }
+
+  // 如果是数组类型，使用 type
+  if (schema.type === "array") {
+    return true;
+  }
+
+  // 如果是简单类型，使用 type
+  if (["string", "number", "integer", "boolean"].includes(schema.type)) {
+    return true;
+  }
+
+  // 如果是对象类型但没有properties，使用 type
+  if (schema.type === "object" && !schema.properties) {
+    return true;
+  }
+
+  return false;
+}
+
 function generateRequestBodyType(
   operation: OperationObject,
   schemas: any
-): string {
-  if (!operation.requestBody?.content) return "";
+): { type: "interface" | "type"; content: string } {
+  if (!operation.requestBody?.content)
+    return { type: "interface", content: "" };
 
-  // 处理 application/json 类型的请求体
   const jsonContent = operation.requestBody.content["application/json"];
-  if (jsonContent?.schema) {
-    return generateTypeProps(jsonContent.schema, "  ", schemas);
+  if (!jsonContent?.schema) {
+    return { type: "interface", content: "" };
   }
 
-  // 处理 multipart/form-data 类型的请求体
-  const multipartContent = operation.requestBody.content["multipart/form-data"];
-  if (multipartContent?.schema) {
-    return generateTypeProps(multipartContent.schema, "  ", schemas);
+  const schema = jsonContent.schema;
+  const useType = shouldUseTypeInsteadOfInterface(schema);
+
+  if (useType) {
+    let typeContent: string;
+
+    if (schema.type === "array") {
+      // 修改数组类型的处理方式，确保正确的大括号位置
+      const itemProps = generateTypeProps(schema.items, "  ", schemas);
+      typeContent = `Array<{
+${itemProps}
+}>`;
+    } else if (
+      ["string", "number", "integer", "boolean"].includes(schema.type)
+    ) {
+      typeContent = schema.type === "integer" ? "number" : schema.type;
+    } else {
+      typeContent = generateTypeProps(schema, "", schemas);
+    }
+
+    return {
+      type: "type",
+      content: typeContent,
+    };
   }
 
-  return "";
+  // 使用 interface 的情况
+  return {
+    type: "interface",
+    content: generateTypeProps(schema, "  ", schemas),
+  };
 }
 
 export async function fetchOpenApiSpec() {
@@ -263,6 +350,63 @@ export async function generateTypes(options: GenerateOptions) {
 
     const paths = spec.paths || {};
     let typeDefinitions = "";
+    const processedTypes = new Set<string>();
+
+    // 添加一个函数来收集和生成所有被引用的类型
+    function collectReferencedTypes(schema: any) {
+      if (!schema) return;
+
+      if (schema.$ref) {
+        const refType = schema.$ref.split("/").pop();
+        if (
+          !processedTypes.has(refType) &&
+          spec?.components?.schemas?.[refType]
+        ) {
+          processedTypes.add(refType);
+          typeDefinitions = `interface ${refType} ${handleRecursiveType(
+            refType,
+            spec.components?.schemas[refType],
+            "",
+            spec.components?.schemas,
+            new Set()
+          )}\n\n${typeDefinitions}`;
+          // 递归处理引用的类型
+          collectReferencedTypes(spec.components?.schemas[refType]);
+        }
+      }
+
+      // 处理数组类型
+      if (schema.type === "array" && schema.items) {
+        collectReferencedTypes(schema.items);
+      }
+
+      // 处理对象类型
+      if (schema.type === "object" && schema.properties) {
+        Object.values(schema.properties).forEach((prop: any) => {
+          collectReferencedTypes(prop);
+        });
+      }
+    }
+
+    // 在生成类型之前，先收集所有被引用的类型
+    for (const [path, pathItem] of Object.entries(paths)) {
+      for (const operation of Object.values(pathItem as PathItemObject)) {
+        // 检查请求体
+        if (operation.requestBody?.content?.["application/json"]?.schema) {
+          collectReferencedTypes(
+            operation.requestBody.content["application/json"].schema
+          );
+        }
+        // 检查响应
+        if (
+          operation.responses?.["200"]?.content?.["application/json"]?.schema
+        ) {
+          collectReferencedTypes(
+            operation.responses["200"].content["application/json"].schema
+          );
+        }
+      }
+    }
 
     for (const [path, pathItem] of Object.entries(paths)) {
       for (const [method, operation] of Object.entries(
@@ -285,9 +429,11 @@ export async function generateTypes(options: GenerateOptions) {
 
         // 生成请求类型
         if (operation.parameters?.length || operation.requestBody) {
-          let parameterProps = "";
+          const { type: requestBodyType, content: requestBodyProps } =
+            generateRequestBodyType(operation, spec.components?.schemas);
 
-          // 处理 URL 参数
+          // 处理参数
+          let parameterProps = "";
           if (operation.parameters?.length) {
             parameterProps = operation.parameters
               .map((param: Parameter) => {
@@ -333,18 +479,24 @@ export async function generateTypes(options: GenerateOptions) {
               .join("\n");
           }
 
-          // 处理请求体
-          const requestBodyProps = generateRequestBodyType(
-            operation,
-            spec.components?.schemas
-          );
+          if (requestBodyType === "type") {
+            typeDefinitions += `
+/**
+ * 接口 [${operation.summary}↗](${path}) 的 **请求类型**
+ *
+ * @分类 [${tag}↗](${path})
+ * @请求头 \`${method.toUpperCase()} ${path}\`
+ * @更新时间 \`${updateTime}\`
+ */
+export type ${requestInterfaceName} = ${requestBodyProps};
 
-          // 合并参数和请求体属性
-          const allProps = [parameterProps, requestBodyProps]
-            .filter(Boolean)
-            .join("\n\n");
+`;
+          } else {
+            const allProps = [parameterProps, requestBodyProps]
+              .filter(Boolean)
+              .join("\n\n");
 
-          typeDefinitions += `
+            typeDefinitions += `
 /**
  * 接口 [${operation.summary}↗](${path}) 的 **请求类型**
  *
@@ -357,6 +509,7 @@ ${allProps}
 }
 
 `;
+          }
         }
 
         // 生成响应类型
