@@ -1,7 +1,7 @@
 {
-  "name": "@apifox/typegen",
+  "name": "apifox-ts-gen",
   "version": "1.0.0",
-  "description": "Generate TypeScript types from Apifox OpenAPI specification",
+  "description": "从 Apifox OpenAPI 规范生成 TypeScript 类型定义",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
@@ -13,16 +13,18 @@
     }
   },
   "bin": {
-    "apifox-typegen": "dist/cli.js"
+    "apifox-typegen": "./dist/cli.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "build": "tsup",
     "dev": "ts-node src/cli.ts --no-interactive",
     "watch": "tsup --watch",
-    "prepublishOnly": "pnpm build"
+    "prepublishOnly": "npm run build"
   },
   "keywords": [
     "apifox",

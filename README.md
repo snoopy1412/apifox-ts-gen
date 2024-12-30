@@ -1,9 +1,9 @@
-# @apifox/typegen
+# apifox-ts-gen
 
 > 从 Apifox OpenAPI 规范生成 TypeScript 类型定义
 
-[![NPM version](https://img.shields.io/npm/v/@apifox/typegen.svg)](https://www.npmjs.com/package/@apifox/typegen)
-[![NPM downloads](https://img.shields.io/npm/dm/@apifox/typegen.svg)](https://www.npmjs.com/package/@apifox/typegen)
+[![NPM version](https://img.shields.io/npm/v/apifox-ts-gen.svg)](https://www.npmjs.com/package/apifox-ts-gen)
+[![NPM downloads](https://img.shields.io/npm/dm/apifox-ts-gen.svg)](https://www.npmjs.com/package/apifox-ts-gen)
 
 ## ✨ 特性
 
@@ -18,13 +18,13 @@
 
 ```bash
 # npm
-npm install @apifox/typegen
+npm install apifox-ts-gen
 
 # yarn
-yarn add @apifox/typegen
+yarn add apifox-ts-gen
 
 # pnpm
-pnpm add @apifox/typegen
+pnpm add apifox-ts-gen
 ```
 
 ## 🔧 配置
@@ -32,7 +32,7 @@ pnpm add @apifox/typegen
 创建 `apifox.config.js`：
 
 ```javascript
-/** @type {import('@apifox/typegen').ApifoxConfig} */
+/** @type {import('apifox-ts-gen').ApifoxConfig} */
 module.exports = {
   // OpenAPI 规范地址
   url: "http://localhost:4523/export/openapi/2",
@@ -72,7 +72,7 @@ npx apifox-typegen --modules user,auth,order
 ### 编程式使用
 
 ```typescript
-import { generateTypes } from "@apifox/typegen";
+import { generateTypes } from "apifox-ts-gen";
 
 async function generate() {
   await generateTypes({
