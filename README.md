@@ -57,16 +57,16 @@ module.exports = {
 
 ```bash
 # 交互式生成
-npx apifox-typegen
+npx apifox-ts-gen
 
 # 非交互式生成
-npx apifox-typegen --no-interactive
+npx apifox-ts-gen --no-interactive
 
 # 指定配置
-npx apifox-typegen --url http://your-api-url --output src/types
+npx apifox-ts-gen --url http://your-api-url --output src/types
 
 # 指定模块
-npx apifox-typegen --modules user,auth,order
+npx apifox-ts-gen --modules user,auth,order
 ```
 
 ### 编程式使用

@@ -10,7 +10,7 @@ import type { OpenAPISpec, Tag } from "./types/openapi";
 const program = new Command();
 
 program
-  .name("apifox-gen")
+  .name("apifox-ts-gen")
   .description("Generate TypeScript types from Apifox OpenAPI specification")
   .option("-u, --url <url>", "OpenAPI specification URL")
   .option("-o, --output <dir>", "Output directory")
