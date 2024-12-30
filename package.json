@@ -41,12 +41,12 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/apifox/typegen.git"
+    "url": "git+https://github.com/snoopy1412/apifox-ts-gen.git"
   },
   "bugs": {
-    "url": "https://github.com/apifox/typegen/issues"
+    "url": "https://github.com/snoopy1412/apifox-ts-gen/issues"
   },
-  "homepage": "https://github.com/apifox/typegen#readme",
+  "homepage": "https://github.com/snoopy1412/apifox-ts-gen#readme",
   "dependencies": {
     "@alicloud/openapi-client": "^0.4.12",
     "@alicloud/tea-util": "^1.4.9",
