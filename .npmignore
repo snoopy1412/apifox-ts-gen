@@ -1,0 +1,13 @@
+src/
+tests/
+examples/
+.github/
+.vscode/
+.idea/
+.env*
+*.log
+tsconfig.json
+tsup.config.ts
+.eslintrc*
+.prettierrc*
+.gitignore 

@@ -1,0 +1,18 @@
+# Build output
+dist/
+out/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+.env.production
+
+# Cache files
+openapi-schema.json 
+node_modules
+
+apifox.config.js
+apifox.config.cjs
+apifox.config.mjs
+apifox.config.ts
