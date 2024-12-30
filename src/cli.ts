@@ -5,7 +5,7 @@ import { Command } from "commander";
 import { fetchOpenApiSpec, generateTypes } from "./core/generator";
 import { translateText } from "./core/translator";
 import { API_CONFIG, initConfig } from "./config/apiConfig";
-import type { OpenAPISpec, Tag } from "./types/openapi";
+import type { Tag } from "./types/openapi";
 
 const program = new Command();
 

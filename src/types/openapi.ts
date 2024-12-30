@@ -6,6 +6,11 @@ export interface Parameter {
   schema?: {
     type: string;
     format?: string;
+    items?: {
+      type?: string;
+      format?: string;
+      $ref?: string;
+    };
   };
 }
 
@@ -27,6 +32,13 @@ export interface OperationObject {
   parameters?: Parameter[];
   responses?: {
     [key: string]: ResponseObject;
+  };
+  requestBody?: {
+    content: {
+      [key: string]: {
+        schema: any;
+      };
+    };
   };
 }
 
