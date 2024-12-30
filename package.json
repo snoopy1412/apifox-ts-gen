@@ -1,6 +1,6 @@
 {
   "name": "apifox-ts-gen",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "从 Apifox OpenAPI 规范生成 TypeScript 类型定义",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
