@@ -214,10 +214,10 @@ function generateTypeProps(
           }
 
           if (prop.type === "object") {
-            if (processedRefs.has(prop.items.type)) {
-              return `${indent}/**${description}\n${indent} */\n${indent}${name}${required}: ${prop.items.type};`;
+            // 对象类型不应该检查 items
+            if (!prop.properties) {
+              return `${indent}/**${description}\n${indent} */\n${indent}${name}${required}: Record<string, any>;`;
             }
-            processedRefs.add(prop.items.type);
             return `${indent}/**${description}\n${indent} */\n${indent}${name}${required}: {\n${generateTypeProps(
               prop,
               indent + "  ",
@@ -359,8 +359,9 @@ export async function generateTypes(options: GenerateOptions) {
       if (schema.$ref) {
         const refType = schema.$ref.split("/").pop();
         if (
+          refType &&
           !processedTypes.has(refType) &&
-          spec?.components?.schemas?.[refType]
+          spec.components?.schemas?.[refType]
         ) {
           processedTypes.add(refType);
           typeDefinitions = `interface ${refType} ${handleRecursiveType(
