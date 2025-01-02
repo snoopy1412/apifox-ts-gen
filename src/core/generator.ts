@@ -352,17 +352,21 @@ export async function generateTypes(options: GenerateOptions) {
     let typeDefinitions = "";
     const processedTypes = new Set<string>();
 
-    // 添加一个函数来收集和生成所有被引用的类型
-    function collectReferencedTypes(schema: any) {
+    // 修改收集逻辑，只收集指定 tag 相关的类型
+    function collectReferencedTypes(schema: any, fromTaggedOperation: boolean) {
       if (!schema) return;
 
       if (schema.$ref) {
         const refType = schema.$ref.split("/").pop();
+        // 只收集特定于该模块的类型，跳过通用响应类型
         if (
+          fromTaggedOperation &&
           refType &&
           !processedTypes.has(refType) &&
-          spec.components?.schemas?.[refType]
+          spec.components?.schemas?.[refType] &&
+          !refType.startsWith("ReturnT")
         ) {
+          // 添加这个条件
           processedTypes.add(refType);
           typeDefinitions = `interface ${refType} ${handleRecursiveType(
             refType,
@@ -372,38 +376,43 @@ export async function generateTypes(options: GenerateOptions) {
             new Set()
           )}\n\n${typeDefinitions}`;
           // 递归处理引用的类型
-          collectReferencedTypes(spec.components?.schemas[refType]);
+          collectReferencedTypes(spec.components?.schemas[refType], true);
         }
       }
 
-      // 处理数组类型
+      // 其他递归处理逻辑保持 fromTaggedOperation 标记
       if (schema.type === "array" && schema.items) {
-        collectReferencedTypes(schema.items);
+        collectReferencedTypes(schema.items, fromTaggedOperation);
       }
 
-      // 处理对象类型
       if (schema.type === "object" && schema.properties) {
         Object.values(schema.properties).forEach((prop: any) => {
-          collectReferencedTypes(prop);
+          collectReferencedTypes(prop, fromTaggedOperation);
         });
       }
     }
 
-    // 在生成类型之前，先收集所有被引用的类型
+    // 修改类型收集的调用，只对指定 tag 的操作进行收集
     for (const [path, pathItem] of Object.entries(paths)) {
-      for (const operation of Object.values(pathItem as PathItemObject)) {
-        // 检查请求体
+      for (const [_, operation] of Object.entries(pathItem as PathItemObject)) {
+        if (!operation || !operation.tags?.some((tag) => tags.includes(tag))) {
+          continue;
+        }
+
+        // 只有当操作属于指定 tag 时才收集类型
         if (operation.requestBody?.content?.["application/json"]?.schema) {
           collectReferencedTypes(
-            operation.requestBody.content["application/json"].schema
+            operation.requestBody.content["application/json"].schema,
+            true
           );
         }
-        // 检查响应
+
         if (
           operation.responses?.["200"]?.content?.["application/json"]?.schema
         ) {
           collectReferencedTypes(
-            operation.responses["200"].content["application/json"].schema
+            operation.responses["200"].content["application/json"].schema,
+            true
           );
         }
       }
