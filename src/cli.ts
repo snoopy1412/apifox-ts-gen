@@ -5,6 +5,7 @@ import { Command } from "commander";
 import { fetchOpenApiSpec, generateTypes } from "./core/generator";
 import { translateText } from "./core/translator";
 import { API_CONFIG, initConfig } from "./config/apiConfig";
+import { generateServices } from "./core/serviceGenerator";
 import type { Tag } from "./types/openapi";
 
 const program = new Command();
@@ -186,14 +187,21 @@ export async function run() {
   );
 
   for (const module of modules) {
-    const outputFile = await generateTypes({
+    // Generate types
+    const typesFile = await generateTypes({
       moduleName: module.englishName!,
       tags: [module.name],
       outputDir,
       typePrefix,
     });
+    console.log(`Generated types for ${module.name} -> ${typesFile}`);
 
-    console.log(`Generated types for ${module.name} -> ${outputFile}`);
+    // Generate services
+    const servicesFile = await generateServices({
+      moduleName: module.englishName!,
+      tags: [module.name],
+    });
+    console.log(`Generated services for ${module.name} -> ${servicesFile}`);
   }
 }
 

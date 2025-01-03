@@ -44,4 +44,33 @@ export interface ApifoxConfig {
      */
     accessKeySecret: string;
   };
+
+  /**
+   * API 请求方法导入配置
+   */
+  requestConfig?: {
+    /**
+     * 请求方法导入路径
+     * @example "@/utils/request"
+     */
+    importPath: string;
+
+    /**
+     * API 服务文件生成路径
+     * @example "src/services"
+     */
+    servicesPath: string;
+
+    /**
+     * API 类型文件生成路径
+     * @example "out/types"
+     */
+    typesPath: string;
+
+    /**
+     * API 基础路径
+     * @example "https://api.example.com"
+     */
+    baseURL?: string;
+  };
 }

@@ -13,6 +13,7 @@
 - 📝 自动生成 JSDoc 注释
 - ⚡️ 支持 ESM 和 CommonJS
 - 🛠 灵活的配置选项
+- 🔄 支持生成 API 请求服务（可选）
 
 ## 📦 安装
 
@@ -48,8 +49,39 @@ module.exports = {
     accessKeyId: process.env.ALIBABA_CLOUD_ACCESS_KEY_ID,
     accessKeySecret: process.env.ALIBABA_CLOUD_ACCESS_KEY_SECRET,
   },
+
+  // API 请求服务配置（可选）
+  requestConfig: {
+    // 请求方法导入路径
+    importPath: "@/utils/request",
+    // 生成的服务文件存放路径
+    servicesPath: "src/services",
+    // 类型定义文件导入路径
+    typesPath: "@/types",
+    // API 基础路径
+    baseURL: "https://api.example.com",
+  },
 };
 ```
+
+## ⚙️ 配置项
+
+| 选项            | 类型     | 必填 | 默认值      | 说明             |
+| --------------- | -------- | ---- | ----------- | ---------------- |
+| `url`           | `string` | ✅   | -           | OpenAPI 规范地址 |
+| `outputDir`     | `string` | -    | `src/types` | 输出目录         |
+| `typePrefix`    | `string` | -    | `Api`       | 类型前缀         |
+| `alibabaCloud`  | `object` | -    | -           | 阿里云翻译配置   |
+| `requestConfig` | `object` | -    | -           | API 请求服务配置 |
+
+### requestConfig 配置项
+
+| 选项           | 类型     | 必填 | 说明                 |
+| -------------- | -------- | ---- | -------------------- |
+| `importPath`   | `string` | ✅   | 请求方法导入路径     |
+| `servicesPath` | `string` | ✅   | 服务文件存放路径     |
+| `typesPath`    | `string` | ✅   | 类型定义文件导入路径 |
+| `baseURL`      | `string` | -    | API 基础路径         |
 
 ## 🚀 使用
 
@@ -84,25 +116,6 @@ async function generate() {
 }
 ```
 
-## ⚙️ 配置项
-
-| 选项           | 类型     | 必填 | 默认值      | 说明             |
-| -------------- | -------- | ---- | ----------- | ---------------- |
-| `url`          | `string` | ✅   | -           | OpenAPI 规范地址 |
-| `outputDir`    | `string` | -    | `src/types` | 输出目录         |
-| `typePrefix`   | `string` | -    | `Api`       | 类型前缀         |
-| `alibabaCloud` | `object` | -    | -           | 阿里云翻译配置   |
-
-### 命令行选项
-
-| 选项               | 简写 | 说明                     |
-| ------------------ | ---- | ------------------------ |
-| `--url`            | `-u` | OpenAPI 规范地址         |
-| `--output`         | `-o` | 输出目录                 |
-| `--prefix`         | `-p` | 类型前缀                 |
-| `--modules`        | `-m` | 要生成的模块（逗号分隔） |
-| `--no-interactive` | -    | 非交互式模式             |
-
 ## 📝 生成的类型示例
 
 ```typescript
@@ -121,6 +134,35 @@ export interface ApiGetUserInfoResponse {
   /** 用户角色 */
   role: "admin" | "user";
 }
+```
+
+## 📄 生成的服务示例
+
+```typescript
+import { GET } from "@/utils/request";
+import type {
+  ApiGetUserInfoRequest,
+  ApiGetUserInfoResponse,
+} from "@/types/user";
+
+/**
+ * 获取用户信息
+ * @分类 [用户相关↗](/api/user)
+ * @请求头 `GET /api/user/info`
+ */
+export const getUserInfo = ({
+  params,
+  config,
+}: {
+  params: ApiGetUserInfoRequest;
+  config?: AxiosRequestConfig<ApiGetUserInfoRequest>;
+}) => {
+  return GET<ApiGetUserInfoRequest, AxiosResponse<ApiGetUserInfoResponse>>({
+    url: "/api/user/info",
+    data: params,
+    ...config,
+  });
+};
 ```
 
 ## 📄 支持的配置文件

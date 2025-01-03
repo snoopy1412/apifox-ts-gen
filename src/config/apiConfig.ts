@@ -1,19 +1,9 @@
-import { cosmiconfig, Loader } from "cosmiconfig";
+import { cosmiconfig } from "cosmiconfig";
 import chalk from "chalk";
 import { pathToFileURL } from "url";
 import { readFileSync } from "fs";
 import { resolve, dirname } from "path";
 import type { ApifoxConfig } from "../types/config";
-
-interface ApiConfig {
-  url: string;
-  outputDir: string;
-  typePrefix: string;
-  alibabaCloud: {
-    accessKeyId: string;
-    accessKeySecret: string;
-  };
-}
 
 function createErrorBox(title: string, content: string) {
   const boxWidth = 80;
@@ -30,7 +20,7 @@ ${content}
 ${line}`;
 }
 
-function validateConfig(config: Partial<ApiConfig>): config is ApiConfig {
+function validateConfig(config: Partial<ApifoxConfig>): config is ApifoxConfig {
   const requiredFields = ["url", "outputDir", "typePrefix"] as const;
   const missingFields = requiredFields.filter((field) => !config[field]);
 
@@ -89,12 +79,31 @@ ${chalk.white("};")}
     throw new Error(message);
   }
 
+  if (config.requestConfig) {
+    const requiredRequestFields = [
+      "importPath",
+      "servicesPath",
+      "typesPath",
+    ] as const;
+    const missingRequestFields = requiredRequestFields.filter(
+      (field) => !config.requestConfig?.[field]
+    );
+
+    if (missingRequestFields.length > 0) {
+      throw new Error(
+        `Missing required requestConfig fields: ${missingRequestFields.join(
+          ", "
+        )}`
+      );
+    }
+  }
+
   return true;
 }
 
 // 默认配置 - 只保留非敏感的默认值
-const defaultConfig: ApiConfig = {
-  url: "", // 移除默认 URL，强制用户提供
+const defaultConfig: ApifoxConfig = {
+  url: "",
   outputDir: "src/types",
   typePrefix: "Api",
   alibabaCloud: {
@@ -123,7 +132,7 @@ function isESMPackage(configPath: string): boolean {
 }
 
 // 加载配置文件
-async function loadConfig(): Promise<ApiConfig> {
+async function loadConfig(): Promise<ApifoxConfig> {
   try {
     const explorer = cosmiconfig("apifox", {
       searchPlaces: [
@@ -224,7 +233,7 @@ ${chalk.white("};")}
   }
 }
 
-export let API_CONFIG: ApiConfig = defaultConfig;
+export let API_CONFIG: ApifoxConfig = defaultConfig;
 
 export async function initConfig() {
   API_CONFIG = await loadConfig();
