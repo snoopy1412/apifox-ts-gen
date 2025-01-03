@@ -25,28 +25,31 @@ function getContentType(operation: OperationObject): string {
 function formatMethodName(method: string, path: string): string {
   // 移除路径参数的大括号，保留参数名作为方法名的一部分
   const cleanPath = path.replace(/\{([^}]+)\}/g, (_, param) => {
-    // 将参数名转为驼峰格式并首字母大写
     return param
       .split(/[-_]/)
-      .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
       .join("");
   });
 
   // 分割路径并过滤空字符串
   const parts = cleanPath.split("/").filter(Boolean);
 
-  // 处理特殊字符并确保正确的驼峰命名
+  // 处理特殊字符并保持正确的驼峰格式
   const formattedParts = parts.map((part, index) => {
-    // 将每个部分都转换为驼峰格式
-    const words = part.split(/[-_]/).filter(Boolean);
-    return words
+    // 如果部分已经是驼峰格式，保持原样但确保首字母大写
+    if (!/[-_]/.test(part) && part.length > 0) {
+      // 始终将第一个字母大写，除非是第一个部分
+      return index === 0
+        ? part.charAt(0).toLowerCase() + part.slice(1)
+        : part.charAt(0).toUpperCase() + part.slice(1);
+    }
+
+    // 处理连字符和下划线分隔的词
+    return part
+      .split(/[-_]/)
       .map((word, i) => {
-        // 如果是第一个词且是方法名，保持小写
-        if (
-          i === 0 &&
-          index === 0 &&
-          method.toLowerCase() === word.toLowerCase()
-        ) {
+        // 如果是第一个部分的第一个词，保持小写
+        if (index === 0 && i === 0) {
           return word.toLowerCase();
         }
         // 其他情况，首字母大写
@@ -55,8 +58,15 @@ function formatMethodName(method: string, path: string): string {
       .join("");
   });
 
-  // 组合方法名
-  return `${method.toLowerCase()}${formattedParts.join("")}`;
+  // 组合方法名，确保第一个单词之后的所有单词首字母大写
+  const methodPrefix = method.toLowerCase();
+  const pathPart = formattedParts.join("");
+
+  // 确保路径部分的首字母大写
+  const formattedPathPart =
+    pathPart.charAt(0).toUpperCase() + pathPart.slice(1);
+
+  return `${methodPrefix}${formattedPathPart}`;
 }
 
 function generateServiceMethod(
