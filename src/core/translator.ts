@@ -9,16 +9,7 @@ export async function translateText(text: string): Promise<string> {
 
     const translated = await translateAndConvert(text);
 
-    // 处理翻译结果，转换为驼峰命名
-    return translated
-      .split(/[\s-]+/)
-      .map((word, index) => {
-        word = word.toLowerCase();
-        return index === 0
-          ? word
-          : word.charAt(0).toUpperCase() + word.slice(1);
-      })
-      .join("");
+    return translated;
   } catch (error) {
     console.error(`Failed to translate "${text}":`, error);
     // 翻译失败时返回原文
