@@ -520,6 +520,21 @@ ${allProps}
 
 `;
           }
+        } else {
+          // 没有参数时，生成空的请求类型
+          typeDefinitions += `
+/**
+ * 接口 [${operation.summary}↗](${path}) 的 **请求类型**
+ *
+ * @分类 [${tag}↗](${path})
+ * @请求头 \`${method.toUpperCase()} ${path}\`
+ * @更新时间 \`${updateTime}\`
+ */
+export interface ${requestInterfaceName} {
+  // This API doesn't require any parameters
+}
+
+`;
         }
 
         // 生成响应类型
