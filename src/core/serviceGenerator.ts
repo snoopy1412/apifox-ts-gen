@@ -18,20 +18,13 @@ function generateServiceMethod(
   path: string,
   method: string,
   operation: OperationObject,
-  typePrefix: string,
-  baseURL?: string
+  typePrefix: string
 ): string {
   const methodName = formatMethodName(method, path);
-  console.log("path", path);
-  console.log("method", method);
-  console.log("typePrefix", typePrefix);
-
   const interfaceBaseName = formatTypeName(path, method, typePrefix);
-  console.log("interfaceBaseName", interfaceBaseName);
   const requestType = `${interfaceBaseName}Request`;
   const responseType = `${interfaceBaseName}Response`;
   const methodUpper = method.toUpperCase();
-  const fullURL = baseURL ? `${baseURL}${path}` : path;
 
   return `
 /**
@@ -47,7 +40,7 @@ export const ${methodName} = ({
   config?: AxiosRequestConfig<${requestType}>;
 }) => {
   return ${methodUpper}<${requestType}, AxiosResponse<${responseType}>>({
-    url: "${fullURL}",
+    url: "${path}",
     data: params,
     ...config,
   });
@@ -118,8 +111,7 @@ import type {
           path,
           method,
           operation,
-          typePrefix,
-          requestConfig.baseURL
+          typePrefix
         );
         serviceContent += "\n\n";
       }

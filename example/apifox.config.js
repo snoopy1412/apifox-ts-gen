@@ -10,7 +10,6 @@ module.exports = {
   requestConfig: {
     importPath: "@/utils/request",
     servicesPath: "src/services",
-    typesPath: "@/out/types",
-    baseURL: "https://dev.demo.com/api",
+    typesPath: "@/out/types"
   },
 };

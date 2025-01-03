@@ -66,11 +66,5 @@ export interface ApifoxConfig {
      * @example "out/types"
      */
     typesPath: string;
-
-    /**
-     * API 基础路径
-     * @example "https://api.example.com"
-     */
-    baseURL?: string;
   };
 }

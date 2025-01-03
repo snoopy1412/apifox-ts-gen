@@ -58,8 +58,6 @@ module.exports = {
     servicesPath: "src/services",
     // 类型定义文件导入路径
     typesPath: "@/types",
-    // API 基础路径
-    baseURL: "https://api.example.com",
   },
 };
 ```
@@ -81,7 +79,6 @@ module.exports = {
 | `importPath`   | `string` | ✅   | 请求方法导入路径     |
 | `servicesPath` | `string` | ✅   | 服务文件存放路径     |
 | `typesPath`    | `string` | ✅   | 类型定义文件导入路径 |
-| `baseURL`      | `string` | -    | API 基础路径         |
 
 ## 🚀 使用
 
