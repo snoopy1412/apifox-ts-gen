@@ -173,7 +173,7 @@ export const ${methodName} = (
   }: ${requestType},
   config?: AxiosRequestConfig<${requestType}>
 ) => {
-  return ${methodUpper}<${requestType}, AxiosResponse<${responseType}>>({
+  return ${methodUpper}<${requestType}, ${responseType}>({
 ${requestConfig.join(",\n")}
   });
 };`;
@@ -199,7 +199,7 @@ export async function generateServices(options: ServiceGenerateOptions) {
     mkdirSync(dirname(outputFile), { recursive: true });
 
     let serviceContent = `// This file is auto-generated. DO NOT EDIT.
-import type { AxiosRequestConfig, AxiosResponse } from "axios";
+import type { AxiosRequestConfig } from "axios";
 import { GET, POST, PUT, DELETE } from "${requestConfig.importPath}";
 import type {
 `;
