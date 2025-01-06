@@ -163,13 +163,16 @@ function generateServiceMethod(
  * @请求头 \`${methodUpper} ${path}\`
  * @contentType ${contentType}
  */
-export const ${methodName} = ({
-  params,
-  config,
-}: {
-  params: ${requestType};
-  config?: AxiosRequestConfig<${requestType}>;
-}) => {
+export const ${methodName} = (
+  params${
+    !operation.parameters ||
+    operation.parameters?.length === 0 ||
+    operation.parameters?.every((p) => !p.required)
+      ? "?"
+      : ""
+  }: ${requestType},
+  config?: AxiosRequestConfig<${requestType}>
+) => {
   return ${methodUpper}<${requestType}, AxiosResponse<${responseType}>>({
 ${requestConfig.join(",\n")}
   });
