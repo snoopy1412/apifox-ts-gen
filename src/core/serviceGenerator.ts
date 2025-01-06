@@ -154,7 +154,7 @@ function generateServiceMethod(
   }
 
   // 添加配置展开
-  requestConfig.push("    ...config");
+  requestConfig.push("    config");
 
   return `
 /**
