@@ -113,6 +113,14 @@ async function generate() {
 }
 ```
 
+## ⚠️ 重要提示
+
+> 在使用 Apifox 导出 OpenAPI 文档时，请确保勾选 **"将 API 文档的目录，作为 Tags 字段导出"** 选项。如果未勾选此选项，将无法正确获取所有模块信息，导致文档生成失败。
+
+具体设置位置如下图所示：
+
+![Apifox Tags设置](images/image.png)
+
 ## 📝 生成的类型示例
 
 ```typescript
