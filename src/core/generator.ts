@@ -294,41 +294,156 @@ function generateRequestBodyType(
   if (!operation.requestBody?.content)
     return { type: "interface", content: "" };
 
+  const formDataContent = operation.requestBody.content["multipart/form-data"];
   const jsonContent = operation.requestBody.content["application/json"];
-  if (!jsonContent?.schema) {
-    return { type: "interface", content: "" };
+  const urlencodedContent =
+    operation.requestBody.content["application/x-www-form-urlencoded"];
+
+  let properties = "";
+
+  // 处理 x-www-form-urlencoded 内容
+  if (urlencodedContent?.schema?.properties) {
+    const urlencodedProps = Object.entries(urlencodedContent.schema.properties)
+      .map(([name, prop]: [string, any]) => {
+        const required = urlencodedContent.schema.required?.includes(name)
+          ? ""
+          : "?";
+        const description = prop.description
+          ? `\n   * ${prop.description}` +
+            (prop.type ? `\n   * 类型: ${prop.type}` : "")
+          : "";
+
+        const type = prop.type === "integer" ? "number" : prop.type || "string";
+        return `  /**${description}\n   */\n  ${name}${required}: ${type};`;
+      })
+      .join("\n");
+
+    properties += urlencodedProps;
   }
 
-  const schema = jsonContent.schema;
-  const useType = shouldUseTypeInsteadOfInterface(schema);
+  // 处理form-data内容
+  if (formDataContent?.schema?.properties) {
+    const formProps = Object.entries(formDataContent.schema.properties)
+      .map(([name, prop]: [string, any]) => {
+        const required = formDataContent.schema.required?.includes(name)
+          ? ""
+          : "?";
+        const description = prop.description
+          ? `\n   * ${prop.description}` +
+            (prop.type ? `\n   * 类型: ${prop.type}` : "")
+          : "";
 
-  if (useType) {
-    let typeContent: string;
+        // 特殊处理file类型
+        if (prop.type === "string" && prop.format === "binary") {
+          return `  /**${description}\n   */\n  ${name}${required}: File;`;
+        }
 
-    if (schema.type === "array") {
-      // 修改数组类型的处理方式，确保正确的大括号位置
-      const itemProps = generateTypeProps(schema.items, "  ", schemas);
-      typeContent = `Array<{
+        const type = prop.type === "integer" ? "number" : prop.type || "string";
+        return `  /**${description}\n   */\n  ${name}${required}: ${type};`;
+      })
+      .join("\n");
+
+    if (properties && formProps) {
+      properties += "\n\n";
+    }
+    properties += formProps;
+  }
+
+  // 处理JSON内容
+  if (jsonContent?.schema) {
+    const schema = jsonContent.schema;
+
+    // 检查是否应该使用type而不是interface
+    if (
+      !formDataContent &&
+      !urlencodedContent &&
+      shouldUseTypeInsteadOfInterface(schema)
+    ) {
+      let typeContent: string;
+
+      if (schema.type === "array") {
+        const itemProps = generateTypeProps(schema.items, "  ", schemas);
+        typeContent = `Array<{
 ${itemProps}
 }>`;
-    } else if (
-      ["string", "number", "integer", "boolean"].includes(schema.type)
-    ) {
-      typeContent = schema.type === "integer" ? "number" : schema.type;
-    } else {
-      typeContent = generateTypeProps(schema, "", schemas);
+      } else if (
+        ["string", "number", "integer", "boolean"].includes(schema.type)
+      ) {
+        typeContent = schema.type === "integer" ? "number" : schema.type;
+      } else {
+        typeContent = generateTypeProps(schema, "", schemas);
+      }
+
+      return {
+        type: "type",
+        content: typeContent,
+      };
     }
 
-    return {
-      type: "type",
-      content: typeContent,
+    // 处理嵌套对象和数组的函数
+    const processProperty = (
+      prop: any,
+      name: string,
+      required: boolean,
+      indent: string
+    ): string => {
+      const description = prop.description
+        ? `\n${indent} * ${prop.description}` +
+          (prop.type ? `\n${indent} * 类型: ${prop.type}` : "")
+        : "";
+
+      const requiredMark = required ? "" : "?";
+
+      if (prop.type === "array") {
+        if (!prop.items) {
+          return `${indent}/**${description}\n${indent} */\n${indent}${name}${requiredMark}: any[];`;
+        }
+
+        if (prop.items.type === "object") {
+          const itemProps = processObjectProperties(prop.items, indent + "  ");
+          return `${indent}/**${description}\n${indent} */\n${indent}${name}${requiredMark}: Array<{
+${itemProps}
+${indent}}>;`;
+        }
+
+        const itemType =
+          prop.items.type === "integer" ? "number" : prop.items.type || "any";
+        return `${indent}/**${description}\n${indent} */\n${indent}${name}${requiredMark}: ${itemType}[];`;
+      }
+
+      if (prop.type === "object") {
+        const nestedProps = processObjectProperties(prop, indent + "  ");
+        return `${indent}/**${description}\n${indent} */\n${indent}${name}${requiredMark}: {
+${nestedProps}
+${indent}};`;
+      }
+
+      const type = prop.type === "integer" ? "number" : prop.type || "any";
+      return `${indent}/**${description}\n${indent} */\n${indent}${name}${requiredMark}: ${type};`;
     };
+
+    const processObjectProperties = (schema: any, indent: string): string => {
+      if (!schema.properties) return "";
+
+      return Object.entries(schema.properties)
+        .map(([name, prop]: [string, any]) => {
+          const required = schema.required?.includes(name) ?? false;
+          return processProperty(prop, name, required, indent);
+        })
+        .join("\n");
+    };
+
+    const jsonProps = processObjectProperties(schema, "  ");
+
+    if (properties && jsonProps) {
+      properties += "\n\n";
+    }
+    properties += jsonProps;
   }
 
-  // 使用 interface 的情况
   return {
     type: "interface",
-    content: generateTypeProps(schema, "  ", schemas),
+    content: properties,
   };
 }
 

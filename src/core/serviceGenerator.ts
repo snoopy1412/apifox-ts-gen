@@ -69,6 +69,42 @@ function formatMethodName(method: string, path: string): string {
   return `${methodPrefix}${formattedPathPart}`;
 }
 
+function generateFormDataRequestCode(): string {
+  return `(() => {
+    if (!params) return new FormData();
+    const formData = new FormData();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value === undefined || value === null) return;
+      
+      if (value instanceof File) {
+        formData.append(key, value);
+      } else if (Array.isArray(value)) {
+        value.forEach(item => {
+          if (item instanceof File) {
+            formData.append(key, item);
+          } else if (item !== undefined && item !== null) {
+            formData.append(key, String(item));
+          }
+        });
+      } else {
+        formData.append(key, String(value));
+      }
+    });
+    return formData;
+  })()`;
+}
+
+function generateUrlEncodedRequestCode(): string {
+  return `(() => {
+    if (!params) return new URLSearchParams();
+    return new URLSearchParams(
+      Object.entries(params)
+        .filter(([_, value]) => value !== undefined && value !== null)
+        .map(([key, value]) => [key, String(value)])
+    );
+  })()`;
+}
+
 function generateServiceMethod(
   path: string,
   method: string,
@@ -117,27 +153,9 @@ function generateServiceMethod(
   } else {
     // POST, PUT, PATCH 等请求处理
     if (contentType === "multipart/form-data") {
-      requestConfig.push(`    data: (() => {
-        const formData = new FormData();
-        Object.entries(params).forEach(([key, value]) => {
-          if (Array.isArray(value)) {
-            value.forEach(item => formData.append(key, item));
-          } else if (value !== undefined) {
-            formData.append(key, value);
-          }
-        });
-        return formData;
-      })()`);
+      requestConfig.push(`    data: ${generateFormDataRequestCode()}`);
     } else if (contentType === "application/x-www-form-urlencoded") {
-      requestConfig.push(`    data: new URLSearchParams(
-        Object.entries(params)
-          .filter(([_, value]) => value !== undefined)
-          .map(([key, value]) => [key, String(value)])
-      ),
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        ...config?.headers
-      }`);
+      requestConfig.push(`    data: ${generateUrlEncodedRequestCode()}`);
     } else {
       // JSON 请求
       if (pathParams.length > 0) {
