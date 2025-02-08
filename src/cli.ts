@@ -28,9 +28,35 @@ interface ModuleConfig {
   selected: boolean;
 }
 
+// 添加批量处理函数
+async function batchTranslate(modules: ModuleConfig[], batchSize = 20) {
+  // 将模块分组
+  const batches: ModuleConfig[][] = [];
+  for (let i = 0; i < modules.length; i += batchSize) {
+    batches.push(modules.slice(i, i + batchSize));
+  }
+
+  // 逐批并行处理
+  for (const batch of batches) {
+    await Promise.all(
+      batch.map(async (module) => {
+        if (!module.englishName) {
+          try {
+            module.englishName = await translateText(module.name);
+          } catch (error) {
+            console.error(`Translation failed for ${module.name}:`, error);
+            module.englishName = module.name;
+          }
+        }
+      })
+    );
+  }
+}
+
 async function selectModules(nonInteractive = false) {
   try {
     const spec = await fetchOpenApiSpec();
+
     if (!spec.tags) {
       throw new Error("No tags found in OpenAPI specification");
     }
@@ -40,17 +66,8 @@ async function selectModules(nonInteractive = false) {
       selected: false,
     }));
 
-    // 翻译模块名称
-    for (const module of modules) {
-      if (!module.englishName) {
-        try {
-          module.englishName = await translateText(module.name);
-        } catch (error) {
-          console.error(`Translation failed for ${module.name}:`, error);
-          module.englishName = module.name;
-        }
-      }
-    }
+    // 替换原来的串行翻译
+    await batchTranslate(modules);
 
     // 在非交互模式下使用配置文件的值
     if (nonInteractive) {
