@@ -478,10 +478,8 @@ export async function generateTypes(options: GenerateOptions) {
           fromTaggedOperation &&
           refType &&
           !processedTypes.has(refType) &&
-          spec.components?.schemas?.[refType] &&
-          !refType.startsWith("ReturnT")
+          spec.components?.schemas?.[refType]
         ) {
-          // 添加这个条件
           processedTypes.add(refType);
           typeDefinitions = `interface ${refType} ${handleRecursiveType(
             refType,
@@ -515,20 +513,15 @@ export async function generateTypes(options: GenerateOptions) {
         }
 
         // 只有当操作属于指定 tag 时才收集类型
-        if (operation.requestBody?.content?.["application/json"]?.schema) {
-          collectReferencedTypes(
-            operation.requestBody.content["application/json"].schema,
-            true
-          );
-        }
 
         if (
-          operation.responses?.["200"]?.content?.["application/json"]?.schema
+          operation.responses?.["200"]?.content?.["application/json"]?.schema ||
+          operation.responses?.["200"]?.content?.["*/*"]?.schema
         ) {
-          collectReferencedTypes(
-            operation.responses["200"].content["application/json"].schema,
-            true
-          );
+          const schema =
+            operation.responses["200"].content["application/json"]?.schema ||
+            operation.responses["200"].content["*/*"]?.schema;
+          collectReferencedTypes(schema, true);
         }
       }
     }
@@ -620,7 +613,6 @@ export type ${requestInterfaceName} = ${requestBodyProps};
             const allProps = [parameterProps, requestBodyProps]
               .filter(Boolean)
               .join("\n\n");
-
             typeDefinitions += `
 /**
  * 接口 [${operation.summary}↗](${path}) 的 **请求类型**
@@ -652,9 +644,30 @@ export interface ${requestInterfaceName} {
 `;
         }
 
-        // 生成响应类型
+        // 修改获取响应schema的逻辑，添加更多的空值检查
         const responseContent =
-          operation.responses?.["200"]?.content?.["application/json"]?.schema;
+          operation.responses?.["200"]?.content?.["application/json"]?.schema ||
+          operation.responses?.["200"]?.content?.["*/*"]?.schema;
+
+        // 添加调试日志来查看完整的响应对象结构
+        console.log(`[DEBUG] API Path: ${path}, Method: ${method}`);
+        console.log(
+          `[DEBUG] Full responses object:`,
+          JSON.stringify(operation.responses, null, 2)
+        );
+        console.log(
+          `[DEBUG] Status 200 response:`,
+          JSON.stringify(operation.responses?.["200"], null, 2)
+        );
+        console.log(
+          `[DEBUG] Content:`,
+          JSON.stringify(operation.responses?.["200"]?.content, null, 2)
+        );
+        console.log(
+          `[DEBUG] Final response content:`,
+          JSON.stringify(responseContent, null, 2)
+        );
+
         if (responseContent) {
           const schemas = spec.components?.schemas || {};
           const responseProps = generateTypeProps(
@@ -662,6 +675,7 @@ export interface ${requestInterfaceName} {
             "  ",
             schemas
           );
+
           typeDefinitions += `
 /**
  * 接口 [${operation.summary}↗](${path}) 的 **返回类型**
@@ -672,6 +686,24 @@ export interface ${requestInterfaceName} {
  */
 export interface ${responseInterfaceName} {
 ${responseProps}
+}
+
+`;
+        } else {
+          console.log(
+            `[DEBUG] No response content found for ${path} ${method}`
+          );
+          // 没有响应定义时，生成空的响应类型
+          typeDefinitions += `
+/**
+ * 接口 [${operation.summary}↗](${path}) 的 **返回类型**
+ *
+ * @分类 [${tag}↗](${path})
+ * @请求头 \`${method.toUpperCase()} ${path}\`
+ * @更新时间 \`${updateTime}\`
+ */
+export interface ${responseInterfaceName} {
+  // This API doesn't have a defined response type
 }
 
 `;
