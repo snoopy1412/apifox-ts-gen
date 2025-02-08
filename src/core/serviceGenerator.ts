@@ -191,7 +191,7 @@ export const ${methodName} = (
   }: ${requestType},
   config?: AxiosRequestConfig<${requestType}>
 ) => {
-  return ${methodUpper}<${requestType}, ${responseType}>({
+  return ${methodUpper}<unknown, ${responseType}>({
 ${requestConfig.join(",\n")}
   });
 };`;
