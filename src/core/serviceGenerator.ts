@@ -146,7 +146,7 @@ function generateServiceMethod(
       requestConfig.push(`    params: (() => {
         const { ${pathParams.map((p) => p.name).join(", ")}, ...rest } = params;
         return rest;
-      })()`);
+      })() as ${requestType}`);
     } else {
       requestConfig.push(`    params: params`);
     }

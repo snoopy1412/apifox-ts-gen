@@ -649,25 +649,6 @@ export interface ${requestInterfaceName} {
           operation.responses?.["200"]?.content?.["application/json"]?.schema ||
           operation.responses?.["200"]?.content?.["*/*"]?.schema;
 
-        // 添加调试日志来查看完整的响应对象结构
-        console.log(`[DEBUG] API Path: ${path}, Method: ${method}`);
-        console.log(
-          `[DEBUG] Full responses object:`,
-          JSON.stringify(operation.responses, null, 2)
-        );
-        console.log(
-          `[DEBUG] Status 200 response:`,
-          JSON.stringify(operation.responses?.["200"], null, 2)
-        );
-        console.log(
-          `[DEBUG] Content:`,
-          JSON.stringify(operation.responses?.["200"]?.content, null, 2)
-        );
-        console.log(
-          `[DEBUG] Final response content:`,
-          JSON.stringify(responseContent, null, 2)
-        );
-
         if (responseContent) {
           const schemas = spec.components?.schemas || {};
           const responseProps = generateTypeProps(
@@ -690,9 +671,6 @@ ${responseProps}
 
 `;
         } else {
-          console.log(
-            `[DEBUG] No response content found for ${path} ${method}`
-          );
           // 没有响应定义时，生成空的响应类型
           typeDefinitions += `
 /**

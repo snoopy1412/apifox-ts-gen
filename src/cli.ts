@@ -194,14 +194,12 @@ export async function run() {
       outputDir,
       typePrefix,
     });
-    console.log(`Generated types for ${module.name} -> ${typesFile}`);
 
     // Generate services
     const servicesFile = await generateServices({
       moduleName: module.englishName!,
       tags: [module.name],
     });
-    console.log(`Generated services for ${module.name} -> ${servicesFile}`);
   }
 }
 
