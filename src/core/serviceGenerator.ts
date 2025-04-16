@@ -117,9 +117,14 @@ function generateServiceMethod(
   const responseType = `${interfaceBaseName}Response`;
   const methodUpper = method.toUpperCase();
 
-  // 提取路径参数
+  // 提取路径参数和查询参数
   const pathParams =
     operation.parameters?.filter((param) => param.in === "path") || [];
+  const queryParams =
+    operation.parameters?.filter((param) => param.in === "query") || [];
+
+  // 检查是否有查询参数
+  const hasQueryParams = queryParams.length > 0;
 
   // 构建 URL 模板字符串
   let urlTemplate = path;
@@ -131,7 +136,12 @@ function generateServiceMethod(
   });
 
   // 确定内容类型
-  const contentType = getContentType(operation);
+  let contentType = getContentType(operation);
+
+  // 如果是POST/PUT/PATCH请求且有查询参数，优先使用application/x-www-form-urlencoded
+  if (["POST", "PUT", "PATCH"].includes(methodUpper) && hasQueryParams) {
+    contentType = "application/x-www-form-urlencoded";
+  }
 
   // 构建请求配置
   let requestConfig: string[] = [];
@@ -139,12 +149,17 @@ function generateServiceMethod(
   // 添加 URL
   requestConfig.push(`    url: \`${urlTemplate}\``);
 
+  // 非路径参数（需要根据HTTP方法和内容类型处理）
+  const allParamsForPath = [...pathParams, ...queryParams];
+
   // 根据 HTTP 方法处理参数
   if (["GET", "DELETE"].includes(methodUpper)) {
     // GET 和 DELETE 请求将所有非路径参数放在 params 中
-    if (pathParams.length > 0) {
+    if (allParamsForPath.length > 0) {
       requestConfig.push(`    params: (() => {
-        const { ${pathParams.map((p) => p.name).join(", ")}, ...rest } = params;
+        const { ${allParamsForPath
+          .map((p) => p.name)
+          .join(", ")}, ...rest } = params;
         return rest;
       })() as ${requestType}`);
     } else {
