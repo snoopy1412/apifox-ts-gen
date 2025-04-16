@@ -150,22 +150,23 @@ function generateServiceMethod(
   requestConfig.push(`    url: \`${urlTemplate}\``);
 
   // 非路径参数（需要根据HTTP方法和内容类型处理）
-  const allParamsForPath = [...pathParams, ...queryParams];
+  // const allParamsForPath = [...pathParams, ...queryParams];
 
   // 根据 HTTP 方法处理参数
   if (["GET", "DELETE"].includes(methodUpper)) {
     // GET 和 DELETE 请求将所有非路径参数放在 params 中
-    if (allParamsForPath.length > 0) {
-      requestConfig.push(`    params: (() => {
-        if (!params) return {};
-        const { ${allParamsForPath
-          .map((p) => p.name)
-          .join(", ")}, ...rest } = params;
-        return rest;
-      })() as ${requestType}`);
-    } else {
-      requestConfig.push(`    params: params`);
-    }
+    // if (allParamsForPath.length > 0) {
+    //   requestConfig.push(`    params: (() => {
+    //     if (!params) return {};
+    //     const { ${allParamsForPath
+    //       .map((p) => p.name)
+    //       .join(", ")}, ...rest } = params;
+    //     return rest;
+    //   })() as ${requestType}`);
+    // } else {
+    //   requestConfig.push(`    params: params`);
+    // }
+    requestConfig.push(`    params: params`);
   } else {
     // POST, PUT, PATCH 等请求处理
     if (contentType === "multipart/form-data") {
