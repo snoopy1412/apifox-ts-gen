@@ -157,6 +157,7 @@ function generateServiceMethod(
     // GET 和 DELETE 请求将所有非路径参数放在 params 中
     if (allParamsForPath.length > 0) {
       requestConfig.push(`    params: (() => {
+        if (!params) return {};
         const { ${allParamsForPath
           .map((p) => p.name)
           .join(", ")}, ...rest } = params;
