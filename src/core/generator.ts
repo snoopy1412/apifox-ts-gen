@@ -563,7 +563,19 @@ export async function generateTypes(options: GenerateOptions) {
                       : "")
                   : "";
 
-                // 处理数组类型参数
+                // 处理参数名中包含数组索引的情况，如 category[0]
+                const paramName = param.name;
+                const arrayParamMatch = paramName.match(/^(.+?)\[(\d+)\]$/);
+
+                if (arrayParamMatch) {
+                  // 提取真实的参数名（不带索引）
+                  const realParamName = arrayParamMatch[1];
+
+                  // 处理为数组类型
+                  return `  /**${description}\n   */\n  ${realParamName}${required}: string[];`;
+                }
+
+                // 处理已声明为数组类型的参数
                 if (param.schema?.type === "array") {
                   // 检查 items 是否存在
                   if (!param.schema.items) {
@@ -571,7 +583,7 @@ export async function generateTypes(options: GenerateOptions) {
                       "Array parameter missing items definition:",
                       param
                     );
-                    return `  /**${description}\n   */\n  ${param.name}${required}: any[];`;
+                    return `  /**${description}\n   */\n  ${paramName}${required}: any[];`;
                   }
 
                   // 获取数组项的类型
@@ -584,7 +596,7 @@ export async function generateTypes(options: GenerateOptions) {
                       ? "number"
                       : param.schema.items.type || "any";
 
-                  return `  /**${description}\n   */\n  ${param.name}${required}: ${itemType}[];`;
+                  return `  /**${description}\n   */\n  ${paramName}${required}: ${itemType}[];`;
                 }
 
                 // 处理其他类型参数
@@ -592,7 +604,7 @@ export async function generateTypes(options: GenerateOptions) {
                   param.schema?.type === "integer"
                     ? "number"
                     : param.schema?.type || "string";
-                return `  /**${description}\n   */\n  ${param.name}${required}: ${type};`;
+                return `  /**${description}\n   */\n  ${paramName}${required}: ${type};`;
               })
               .join("\n");
           }
