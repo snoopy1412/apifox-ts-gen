@@ -149,33 +149,32 @@ function generateServiceMethod(
   // 添加 URL
   requestConfig.push(`    url: \`${urlTemplate}\``);
 
-  // 非路径参数（需要根据HTTP方法和内容类型处理）
-  const allParamsForPath = [...pathParams, ...queryParams];
-
   // 根据 HTTP 方法处理参数
   if (["GET", "DELETE"].includes(methodUpper)) {
-    // GET 和 DELETE 请求将所有非路径参数放在 params 中
-    if (allParamsForPath.length > 0) {
-      requestConfig.push(`    data: (() => {
+    // GET 和 DELETE 请求只使用 params
+    if (pathParams.length > 0) {
+      requestConfig.push(`    params: (() => {
         if (!params) return {};
-        const { ${allParamsForPath
-          .map((p) => p.name)
-          .join(", ")}, ...rest } = params;
+        const { ${pathParams.map((p) => p.name).join(", ")}, ...rest } = params;
         return rest;
-      })() as ${requestType}`);
+      })()`);
     } else {
       requestConfig.push(`    params: params`);
     }
   } else {
     // POST, PUT, PATCH 等请求处理
+    // 对于这些请求，所有参数都应该放入请求体，不使用查询参数
+
     if (contentType === "multipart/form-data") {
       requestConfig.push(`    data: ${generateFormDataRequestCode()}`);
     } else if (contentType === "application/x-www-form-urlencoded") {
       requestConfig.push(`    data: ${generateUrlEncodedRequestCode()}`);
     } else {
-      // JSON 请求
+      // JSON请求
       if (pathParams.length > 0) {
+        // 只排除路径参数，查询参数也放入请求体
         requestConfig.push(`    data: (() => {
+          if (!params) return {};
           const { ${pathParams
             .map((p) => p.name)
             .join(", ")}, ...rest } = params;
