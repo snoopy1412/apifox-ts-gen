@@ -97,6 +97,9 @@ function generateFormDataRequestCode(): string {
 function generateUrlEncodedRequestCode(): string {
   return `(() => {
     if (!params) return new URLSearchParams();
+    if (params instanceof FormData) {
+        return params;
+    }
     return new URLSearchParams(
       Object.entries(params)
         .filter(([_, value]) => value !== undefined && value !== null)
