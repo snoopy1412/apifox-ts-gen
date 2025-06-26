@@ -174,8 +174,16 @@ function generateServiceMethod(
       requestConfig.push(`    data: ${generateUrlEncodedRequestCode()}`);
     } else {
       // JSON请求
-      if (pathParams.length > 0) {
-        // 只排除路径参数，查询参数也放入请求体
+      // 检查是否有requestBody属性，这表示是特殊的数组请求体情况
+      const hasRequestBodyProp =
+        operation.requestBody?.content?.["application/json"]?.schema?.type ===
+        "array";
+
+      if (hasRequestBodyProp && pathParams.length > 0) {
+        // 特殊情况：有路径参数且请求体是数组类型
+        requestConfig.push(`    data: params.requestBody || []`);
+      } else if (pathParams.length > 0) {
+        // 普通情况：只排除路径参数
         requestConfig.push(`    data: (() => {
           if (!params) return {};
           const { ${pathParams

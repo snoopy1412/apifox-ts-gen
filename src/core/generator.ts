@@ -362,10 +362,26 @@ function generateRequestBodyType(
       let typeContent: string;
 
       if (schema.type === "array") {
-        const itemProps = generateTypeProps(schema.items, "  ", schemas);
-        typeContent = `Array<{
+        if (schema.items.type === "string") {
+          typeContent = "string[]";
+        } else if (
+          schema.items.type === "number" ||
+          schema.items.type === "integer"
+        ) {
+          typeContent = "number[]";
+        } else if (schema.items.type === "boolean") {
+          typeContent = "boolean[]";
+        } else if (schema.items.type === "object") {
+          const itemProps = generateTypeProps(schema.items, "  ", schemas);
+          typeContent = `Array<{
 ${itemProps}
 }>`;
+        } else if (schema.items.$ref) {
+          const refType = schema.items.$ref.split("/").pop();
+          typeContent = `${refType}[]`;
+        } else {
+          typeContent = "any[]";
+        }
       } else if (
         ["string", "number", "integer", "boolean"].includes(schema.type)
       ) {
@@ -609,7 +625,8 @@ export async function generateTypes(options: GenerateOptions) {
               .join("\n");
           }
 
-          if (requestBodyType === "type") {
+          if (requestBodyType === "type" && !parameterProps) {
+            // 只有当没有参数时才使用type，否则必须使用interface
             typeDefinitions += `
 /**
  * 接口 [${operation.summary}↗](${path}) 的 **请求类型**
@@ -622,10 +639,42 @@ export type ${requestInterfaceName} = ${requestBodyProps};
 
 `;
           } else {
-            const allProps = [parameterProps, requestBodyProps]
-              .filter(Boolean)
-              .join("\n\n");
-            typeDefinitions += `
+            // 处理有参数的情况
+            if (requestBodyType === "type" && parameterProps) {
+              // 特殊情况：有参数且请求体是简单类型
+              // 我们创建一个包含参数的接口，并添加一个特殊的属性来表示请求体
+              typeDefinitions += `
+/**
+ * 接口 [${operation.summary}↗](${path}) 的 **请求类型**
+ *
+ * @分类 [${tag}↗](${path})
+ * @请求头 \`${method.toUpperCase()} ${path}\`
+ * @更新时间 \`${updateTime}\`
+ */
+export interface ${requestInterfaceName} {
+${parameterProps}
+
+  /**
+   * 请求体数据
+   */
+  requestBody: ${requestBodyProps};
+}
+
+`;
+            } else {
+              // 普通情况：使用interface
+              let allProps = "";
+
+              if (parameterProps) {
+                allProps += parameterProps;
+              }
+
+              if (requestBodyProps && requestBodyType === "interface") {
+                if (allProps) allProps += "\n\n";
+                allProps += requestBodyProps;
+              }
+
+              typeDefinitions += `
 /**
  * 接口 [${operation.summary}↗](${path}) 的 **请求类型**
  *
@@ -638,6 +687,7 @@ ${allProps}
 }
 
 `;
+            }
           }
         } else {
           // 没有参数时，生成空的请求类型
