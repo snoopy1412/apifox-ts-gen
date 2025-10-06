@@ -6,6 +6,7 @@ import { fetchOpenApiSpec, generateTypes } from "./core/generator";
 import { translateText } from "./core/translator";
 import { API_CONFIG, initConfig } from "./config/apiConfig";
 import { generateServices } from "./core/serviceGenerator";
+import { formatModuleName } from "./utils/formatters";
 import type { Tag } from "./types/openapi";
 
 const program = new Command();
@@ -70,48 +71,38 @@ async function selectModules(nonInteractive = false) {
     await batchTranslate(modules);
 
     // 在非交互模式下使用配置文件的值
-    if (nonInteractive) {
-      // 选择模块
-      const { selectedModules } = await inquirer.prompt([
-        {
-          type: "checkbox",
-          name: "selectedModules",
-          message: "Select modules to generate types for:",
-          choices: modules.map((module) => ({
-            name: `${module.name} (${module.englishName})`,
-            value: module.name,
-            checked: module.selected,
-          })),
-        },
-      ]);
+    if (nonInteractive && options.modules) {
+      const requestedModules = options.modules
+        .split(",")
+        .map((name: string) => name.trim())
+        .filter(Boolean);
 
-      // 更新选中状态
-      modules.forEach((module) => {
-        module.selected = selectedModules.includes(module.name);
-      });
-
-      // 确认翻译结果
-      for (const module of modules) {
-        if (module.selected) {
-          const { confirmedName } = await inquirer.prompt([
-            {
-              type: "input",
-              name: "confirmedName",
-              message: `Confirm or modify English name for "${module.name}":`,
-              default: module.englishName,
-              validate: (input: string) => {
-                if (!/^[a-zA-Z][a-zA-Z0-9]*$/.test(input)) {
-                  return "Name must start with a letter and contain only letters and numbers";
-                }
-                return true;
-              },
-            },
-          ]);
-          module.englishName = confirmedName;
-        }
+      if (!requestedModules.length) {
+        throw new Error(
+          "No modules specified. Provide --modules values or remove --no-interactive to select manually."
+        );
       }
 
-      // 使用配置文件的值
+      const availableModuleNames = new Set(modules.map((module) => module.name));
+      const unknownModules = requestedModules.filter(
+        (name) => !availableModuleNames.has(name)
+      );
+
+      if (unknownModules.length > 0) {
+        throw new Error(
+          `Unknown module tags: ${unknownModules.join(", ")}\nAvailable tags: ${modules
+            .map((module) => module.name)
+            .join(", ")}`
+        );
+      }
+
+      modules.forEach((module) => {
+        module.selected = requestedModules.includes(module.name);
+        if (module.selected && !module.englishName) {
+          module.englishName = formatModuleName(module.name);
+        }
+      });
+
       return {
         modules: modules.filter((m) => m.selected),
         outputDir: options.output || API_CONFIG.outputDir,
@@ -211,11 +202,14 @@ export async function run() {
       outputDir,
       typePrefix,
     });
+  }
 
-    // Generate services
-    const servicesFile = await generateServices({
-      moduleName: module.englishName!,
-      tags: [module.name],
+  if (modules.length > 0) {
+    await generateServices({
+      modules: modules.map((module) => ({
+        moduleName: module.englishName!,
+        tags: [module.name],
+      })),
     });
   }
 }

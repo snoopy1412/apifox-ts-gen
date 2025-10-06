@@ -4,6 +4,7 @@ import { pathToFileURL } from "url";
 import { readFileSync } from "fs";
 import { resolve, dirname } from "path";
 import type { ApifoxConfig } from "../types/config";
+import { resolveConfigPath } from "../utils/path";
 
 function createErrorBox(title: string, content: string) {
   const boxWidth = 80;
@@ -216,10 +217,37 @@ ${chalk.white("};")}
       throw new Error(message);
     }
 
+    const configDir = result.filepath ? dirname(result.filepath) : process.cwd();
+    const projectRoot = process.cwd();
+
     const config = {
       ...defaultConfig,
       ...result.config,
     };
+
+    if (config.outputDir) {
+      config.outputDir = resolveConfigPath(
+        config.outputDir,
+        configDir,
+        projectRoot
+      );
+    }
+
+    if (config.requestConfig) {
+      config.requestConfig = {
+        ...config.requestConfig,
+        servicesPath: resolveConfigPath(
+          config.requestConfig.servicesPath,
+          configDir,
+          projectRoot
+        ),
+        typesPath: resolveConfigPath(
+          config.requestConfig.typesPath,
+          configDir,
+          projectRoot
+        ),
+      };
+    }
 
     // 验证配置
     validateConfig(config);

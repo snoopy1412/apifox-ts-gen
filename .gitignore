@@ -16,3 +16,5 @@ apifox.config.js
 apifox.config.cjs
 apifox.config.mjs
 apifox.config.ts
+
+AGENTS.md

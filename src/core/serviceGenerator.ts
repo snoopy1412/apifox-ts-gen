@@ -1,13 +1,121 @@
 import { writeFileSync, mkdirSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { join, relative, dirname, sep } from "node:path";
 import { formatModuleName, formatTypeName } from "../utils/formatters";
 import type { PathItemObject, OperationObject } from "../types/openapi";
 import { API_CONFIG } from "../config/apiConfig";
 import { fetchOpenApiSpec } from "./generator";
 
-interface ServiceGenerateOptions {
+interface ModuleDefinition {
   moduleName: string;
   tags: string[];
+}
+
+interface ServiceGenerateOptions {
+  modules: ModuleDefinition[];
+}
+
+type HelperName =
+  | "omitParams"
+  | "buildFormData"
+  | "buildUrlEncoded"
+  | "extractArrayBody";
+
+const HELPER_FILE_NAME = "generatedRequestHelpers.ts";
+
+const helperDefinitions: Record<HelperName, string> = {
+  omitParams: `export function omitParams<T>(
+  params: T | undefined,
+  keys: readonly string[]
+): Partial<T> {
+  if (!params) {
+    return {} as Partial<T>;
+  }
+
+  const source = params as Record<string, unknown>;
+  if (!keys.length) {
+    return { ...source } as Partial<T>;
+  }
+
+  const result: Record<string, unknown> = {};
+  Object.entries(source).forEach(([key, value]) => {
+    if (!keys.includes(key)) {
+      result[key] = value;
+    }
+  });
+
+  return result as Partial<T>;
+}`,
+  buildFormData: `export function buildFormData<T>(params: T | undefined): FormData {
+  const formData = new FormData();
+  if (!params) {
+    return formData;
+  }
+
+  Object.entries(params as Record<string, unknown>).forEach(([key, value]) => {
+    if (value === undefined || value === null) {
+      return;
+    }
+
+    if (value instanceof File) {
+      formData.append(key, value);
+    } else if (Array.isArray(value)) {
+      value.forEach((item) => {
+        if (item === undefined || item === null) {
+          return;
+        }
+
+        if (item instanceof File) {
+          formData.append(key, item);
+        } else {
+          formData.append(key, String(item));
+        }
+      });
+    } else {
+      formData.append(key, String(value));
+    }
+  });
+
+  return formData;
+}`,
+  buildUrlEncoded: `export function buildUrlEncoded<T>(
+  params: T | FormData | undefined
+): URLSearchParams | FormData {
+  if (!params) {
+    return new URLSearchParams();
+  }
+
+  if (params instanceof FormData) {
+    return params;
+  }
+
+  const pairs: [string, string][] = [];
+  Object.entries(params as Record<string, unknown>).forEach(([key, value]) => {
+    if (value === undefined || value === null) {
+      return;
+    }
+    pairs.push([key, String(value)]);
+  });
+
+  return new URLSearchParams(pairs);
+}`,
+  extractArrayBody: `export function extractArrayBody<T>(
+  params: { requestBody?: T } | undefined
+): T | [] {
+  if (!params) {
+    return [];
+  }
+
+  const body = (params as Record<string, unknown>).requestBody as T | undefined;
+  return body ?? [];
+}`,
+};
+
+function normalizeImportPath(pathValue: string): string {
+  const normalized = pathValue.split(sep).join("/");
+  if (normalized.startsWith(".")) {
+    return normalized;
+  }
+  return `./${normalized}`;
 }
 
 function getContentType(operation: OperationObject): string {
@@ -23,7 +131,6 @@ function getContentType(operation: OperationObject): string {
 }
 
 function formatMethodName(method: string, path: string): string {
-  // 移除路径参数的大括号，保留参数名作为方法名的一部分
   const cleanPath = path.replace(/\{([^}]+)\}/g, (_, param) => {
     return param
       .split(/[-_]/)
@@ -31,105 +138,63 @@ function formatMethodName(method: string, path: string): string {
       .join("");
   });
 
-  // 分割路径并过滤空字符串
   const parts = cleanPath.split("/").filter(Boolean);
 
-  // 处理特殊字符并保持正确的驼峰格式
   const formattedParts = parts.map((part, index) => {
-    // 如果部分已经是驼峰格式，保持原样但确保首字母大写
     if (!/[-_]/.test(part) && part.length > 0) {
-      // 始终将第一个字母大写，除非是第一个部分
       return index === 0
         ? part.charAt(0).toLowerCase() + part.slice(1)
         : part.charAt(0).toUpperCase() + part.slice(1);
     }
 
-    // 处理连字符和下划线分隔的词
     return part
       .split(/[-_]/)
       .map((word, i) => {
-        // 如果是第一个部分的第一个词，保持小写
         if (index === 0 && i === 0) {
           return word.toLowerCase();
         }
-        // 其他情况，首字母大写
         return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
       })
       .join("");
   });
 
-  // 组合方法名，确保第一个单词之后的所有单词首字母大写
   const methodPrefix = method.toLowerCase();
   const pathPart = formattedParts.join("");
-
-  // 确保路径部分的首字母大写
   const formattedPathPart =
     pathPart.charAt(0).toUpperCase() + pathPart.slice(1);
 
   return `${methodPrefix}${formattedPathPart}`;
 }
 
-function generateFormDataRequestCode(): string {
-  return `(() => {
-    if (!params) return new FormData();
-    const formData = new FormData();
-    Object.entries(params).forEach(([key, value]) => {
-      if (value === undefined || value === null) return;
-      
-      if (value instanceof File) {
-        formData.append(key, value);
-      } else if (Array.isArray(value)) {
-        value.forEach(item => {
-          if (item instanceof File) {
-            formData.append(key, item);
-          } else if (item !== undefined && item !== null) {
-            formData.append(key, String(item));
-          }
-        });
-      } else {
-        formData.append(key, String(value));
-      }
-    });
-    return formData;
-  })()`;
-}
-
-function generateUrlEncodedRequestCode(): string {
-  return `(() => {
-    if (!params) return new URLSearchParams();
-    if (params instanceof FormData) {
-        return params;
-    }
-    return new URLSearchParams(
-      Object.entries(params)
-        .filter(([_, value]) => value !== undefined && value !== null)
-        .map(([key, value]) => [key, String(value)])
-    );
-  })()`;
+interface GeneratedMethod {
+  code: string;
+  helpers: Set<HelperName>;
+  httpMethod: string;
+  requestType: string;
+  responseType: string;
 }
 
 function generateServiceMethod(
   path: string,
   method: string,
   operation: OperationObject,
-  typePrefix: string
-): string {
+  typePrefix: string,
+  matchedTag: string
+): GeneratedMethod {
   const methodName = formatMethodName(method, path);
   const interfaceBaseName = formatTypeName(path, method, typePrefix);
   const requestType = `${interfaceBaseName}Request`;
   const responseType = `${interfaceBaseName}Response`;
   const methodUpper = method.toUpperCase();
+  const helpers = new Set<HelperName>();
 
-  // 提取路径参数和查询参数
   const pathParams =
     operation.parameters?.filter((param) => param.in === "path") || [];
   const queryParams =
     operation.parameters?.filter((param) => param.in === "query") || [];
 
-  // 检查是否有查询参数
   const hasQueryParams = queryParams.length > 0;
 
-  // 构建 URL 模板字符串
   let urlTemplate = path;
   pathParams.forEach((param) => {
     urlTemplate = urlTemplate.replace(
@@ -138,72 +203,62 @@ function generateServiceMethod(
     );
   });
 
-  // 确定内容类型
   let contentType = getContentType(operation);
 
-  // 如果是POST/PUT/PATCH请求且有查询参数，优先使用application/x-www-form-urlencoded
   if (["POST", "PUT", "PATCH"].includes(methodUpper) && hasQueryParams) {
     contentType = "application/x-www-form-urlencoded";
   }
 
-  // 构建请求配置
-  let requestConfig: string[] = [];
-
-  // 添加 URL
+  const requestConfig: string[] = [];
   requestConfig.push(`    url: \`${urlTemplate}\``);
 
-  // 根据 HTTP 方法处理参数
   if (["GET", "DELETE"].includes(methodUpper)) {
-    // GET 和 DELETE 请求只使用 params
     if (pathParams.length > 0) {
-      requestConfig.push(`    params: (() => {
-        if (!params) return {};
-        const { ${pathParams.map((p) => p.name).join(", ")}, ...rest } = params;
-        return rest;
-      })()`);
+      helpers.add("omitParams");
+      requestConfig.push(
+        `    params: omitParams(params, [${pathParams
+          .map((p) => `"${p.name}"`)
+          .join(", ")}])`
+      );
     } else {
       requestConfig.push(`    params: params`);
     }
   } else {
-    // POST, PUT, PATCH 等请求处理
-    // 对于这些请求，所有参数都应该放入请求体，不使用查询参数
-
     if (contentType === "multipart/form-data") {
-      requestConfig.push(`    data: ${generateFormDataRequestCode()}`);
+      helpers.add("buildFormData");
+      requestConfig.push(`    data: buildFormData(params)`);
     } else if (contentType === "application/x-www-form-urlencoded") {
-      requestConfig.push(`    data: ${generateUrlEncodedRequestCode()}`);
+      helpers.add("buildUrlEncoded");
+      requestConfig.push(`    data: buildUrlEncoded(params)`);
     } else {
-      // JSON请求
-      // 检查是否有requestBody属性，这表示是特殊的数组请求体情况
       const hasRequestBodyProp =
         operation.requestBody?.content?.["application/json"]?.schema?.type ===
         "array";
 
       if (hasRequestBodyProp && pathParams.length > 0) {
-        // 特殊情况：有路径参数且请求体是数组类型
-        requestConfig.push(`    data: params.requestBody || []`);
+        helpers.add("extractArrayBody");
+        requestConfig.push(`    data: extractArrayBody(params)`);
       } else if (pathParams.length > 0) {
-        // 普通情况：只排除路径参数
-        requestConfig.push(`    data: (() => {
-          if (!params) return {};
-          const { ${pathParams
-            .map((p) => p.name)
-            .join(", ")}, ...rest } = params;
-          return rest;
-        })()`);
+        helpers.add("omitParams");
+        requestConfig.push(
+          `    data: omitParams(params, [${pathParams
+            .map((p) => `"${p.name}"`)
+            .join(", ")}])`
+        );
       } else {
         requestConfig.push(`    data: params`);
       }
     }
   }
 
-  // 添加配置展开
   requestConfig.push("    config");
 
-  return `
+  const commentTag = matchedTag || operation.tags?.[0] || "未分类";
+
+  const code = `
 /**
  * ${operation.summary || ""}
- * @分类 [${operation.tags?.[0] || "未分类"}↗](${path})
+ * @分类 [${commentTag}↗](${path})
  * @请求头 \`${methodUpper} ${path}\`
  * @contentType ${contentType}
  */
@@ -221,10 +276,26 @@ export const ${methodName} = (
 ${requestConfig.join(",\n")}
   });
 };`;
+
+  return {
+    code,
+    helpers,
+    httpMethod: methodUpper,
+    requestType,
+    responseType,
+  };
+}
+
+function writeHelperFile(outputDir: string) {
+  const helperFilePath = join(outputDir, HELPER_FILE_NAME);
+  const helperContent = `// This file is auto-generated. DO NOT EDIT.
+${Object.values(helperDefinitions).join("\n\n")}
+`;
+  writeFileSync(helperFilePath, helperContent);
 }
 
 export async function generateServices(options: ServiceGenerateOptions) {
-  const { moduleName, tags } = options;
+  const { modules } = options;
   const { requestConfig, typePrefix } = API_CONFIG;
 
   if (
@@ -235,68 +306,118 @@ export async function generateServices(options: ServiceGenerateOptions) {
     throw new Error("Missing requestConfig in apifox.config.js");
   }
 
+  if (modules.length === 0) {
+    throw new Error("No modules provided for service generation");
+  }
+
   const outputDir = requestConfig.servicesPath;
-  const outputFile = join(outputDir, `${formatModuleName(moduleName)}.ts`);
+  mkdirSync(outputDir, { recursive: true });
 
-  try {
-    const spec = await fetchOpenApiSpec();
-    mkdirSync(dirname(outputFile), { recursive: true });
+  writeHelperFile(outputDir);
 
-    let serviceContent = `// This file is auto-generated. DO NOT EDIT.
-import type { AxiosRequestConfig } from "axios";
-import { GET, POST, PUT, DELETE } from "${requestConfig.importPath}";
-import type {
-`;
+  const spec = await fetchOpenApiSpec();
+  const paths = spec.paths || {};
 
-    // 收集需要导入的类型
+  const helperImportOrder: HelperName[] = [
+    "omitParams",
+    "buildFormData",
+    "buildUrlEncoded",
+    "extractArrayBody",
+  ];
+
+  const httpMethodOrder = ["GET", "POST", "PUT", "DELETE", "PATCH"];
+
+  for (const module of modules) {
+    const moduleFile = join(
+      outputDir,
+      `${formatModuleName(module.moduleName)}.ts`
+    );
+    const moduleDir = dirname(moduleFile);
+
     const types = new Set<string>();
-    for (const [path, pathItem] of Object.entries(spec.paths || {})) {
+    const helperUsage = new Set<HelperName>();
+    const httpMethods = new Set<string>();
+    const methodBlocks: string[] = [];
+
+    for (const [path, pathItem] of Object.entries(paths)) {
       for (const [method, operation] of Object.entries(
         pathItem as PathItemObject
       )) {
-        if (!operation || !operation.tags?.some((tag) => tags.includes(tag)))
-          continue;
+        if (!operation) continue;
 
-        // 使用 formatTypeName 来保持一致的类型命名
-        const interfaceBaseName = formatTypeName(path, method, typePrefix);
-        const requestType = `${interfaceBaseName}Request`;
-        const responseType = `${interfaceBaseName}Response`;
+        const matchedTag = operation.tags?.find((tag) =>
+          module.tags.includes(tag)
+        );
 
-        types.add(requestType);
-        types.add(responseType);
-      }
-    }
+        if (!matchedTag) continue;
 
-    // 添加类型导入，使用 .d.ts 文件
-    serviceContent +=
-      Array.from(types).join(",\n  ") +
-      `,
-} from "${requestConfig.typesPath}/${formatModuleName(moduleName)}.d";
-
-`;
-
-    // 生成服务方法
-    for (const [path, pathItem] of Object.entries(spec.paths || {})) {
-      for (const [method, operation] of Object.entries(
-        pathItem as PathItemObject
-      )) {
-        if (!operation || !operation.tags?.some((tag) => tags.includes(tag)))
-          continue;
-
-        serviceContent += generateServiceMethod(
+        const generated = generateServiceMethod(
           path,
           method,
           operation,
-          typePrefix
+          typePrefix,
+          matchedTag
         );
-        serviceContent += "\n\n";
+
+        types.add(generated.requestType);
+        types.add(generated.responseType);
+        generated.helpers.forEach((helper) => helperUsage.add(helper));
+        httpMethods.add(generated.httpMethod);
+        methodBlocks.push(generated.code);
       }
     }
 
-    writeFileSync(outputFile, serviceContent);
-    return outputFile;
-  } catch (error) {
-    console.error(`Error generating services for ${moduleName}:`, error);
-    throw error;
+    if (methodBlocks.length === 0) {
+      throw new Error(
+        `No operations found for tags: ${module.tags.join(", ")}. Check your Apifox spec.`
+      );
+    }
+
+    const orderedHelpers = helperImportOrder.filter((helper) =>
+      helperUsage.has(helper)
+    );
+
+    const orderedHttpMethods = [
+      ...httpMethodOrder.filter((method) => httpMethods.has(method)),
+      ...Array.from(httpMethods).filter(
+        (method) => !httpMethodOrder.includes(method)
+      ),
+    ];
+
+    const typeList = Array.from(types).sort();
+
+    let fileContent = `// This file is auto-generated. DO NOT EDIT.
+import type { AxiosRequestConfig } from "axios";
+import { ${orderedHttpMethods.join(", ")} } from "${
+      requestConfig.importPath
+    }";
+`;
+
+    if (orderedHelpers.length) {
+      const helperImportPath = normalizeImportPath(
+        relative(moduleDir, join(outputDir, HELPER_FILE_NAME)).replace(
+          /\.ts$/,
+          ""
+        )
+      );
+      fileContent += `import { ${orderedHelpers.join(", ")} } from "${helperImportPath}";
+`;
+    }
+
+    const typeImportFile = join(
+      requestConfig.typesPath,
+      `${formatModuleName(module.moduleName)}.d`
+    );
+    const typeImportPath = normalizeImportPath(relative(moduleDir, typeImportFile));
+
+    fileContent += `import type {
+  ${typeList.join(",\n  ")},
+} from "${typeImportPath}";
+
+`;
+
+    fileContent += methodBlocks.join("\n\n") + "\n";
+
+    writeFileSync(moduleFile, fileContent);
   }
 }
