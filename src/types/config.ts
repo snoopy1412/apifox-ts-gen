@@ -25,9 +25,9 @@ export interface ApifoxConfig {
 
   /**
    * 阿里云翻译配置
-   * @description 用于中文到英文的翻译服务配置
+   * @description 用于中文到英文的翻译服务配置，可选，缺省情况下不会调用翻译接口
    */
-  alibabaCloud: {
+  alibabaCloud?: {
     /**
      * 阿里云访问密钥 ID
      * @description 从阿里云控制台获取的 AccessKey ID

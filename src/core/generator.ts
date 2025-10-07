@@ -1,8 +1,10 @@
 import { writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
-import axios from "axios";
+import axios, { AxiosError } from "axios";
+import chalk from "chalk";
 import { API_CONFIG } from "../config/apiConfig";
 import { formatTypeName, formatModuleName } from "../utils/formatters";
+import { createErrorBox } from "../utils/messages";
 import type {
   OpenAPISpec,
   PathItemObject,
@@ -17,6 +19,64 @@ export interface GenerateOptions {
   tags: string[];
   outputDir: string;
   typePrefix: string;
+}
+
+export class OpenApiSpecError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "OpenApiSpecError";
+  }
+}
+
+function buildFetchErrorMessage(url: string, reason: string, suggestions: string[]) {
+  const suggestionsBlock =
+    suggestions.length > 0
+      ? `\n${chalk.yellow.bold("Fix:")}\n${suggestions
+          .map((line) => `  ${chalk.white(line)}`)
+          .join("\n")}\n`
+      : "";
+
+  return createErrorBox(
+    "OpenAPI Fetch Failed",
+    `
+${chalk.yellow.bold("URL:")}
+  ${chalk.cyan(url)}
+
+${chalk.yellow.bold("Reason:")}
+  ${chalk.red(reason)}
+${suggestionsBlock}`
+  );
+}
+
+function normaliseUrl(url: string): string {
+  try {
+    return new URL(url).toString();
+  } catch {
+    throw new OpenApiSpecError(
+      createErrorBox(
+        "Invalid OpenAPI URL",
+        `
+${chalk.yellow.bold("Provided:")}
+  ${chalk.cyan(url)}
+
+${chalk.yellow.bold("Fix:")}
+  Supply a valid HTTP(S) URL pointing to the Apifox OpenAPI export.`
+      )
+    );
+  }
+}
+
+function describeAxiosFailure(error: AxiosError) {
+  if (error.response) {
+    const status = `${error.response.status} ${error.response.statusText ?? ""}`.trim();
+    return `Server responded with ${status}.`;
+  }
+
+  if (error.code) {
+    return `Request failed (${error.code}).`;
+  }
+
+  return error.message;
 }
 
 // 添加一个新的类型来跟踪已处理的引用
@@ -353,6 +413,16 @@ function generateRequestBodyType(
   if (jsonContent?.schema) {
     const schema = jsonContent.schema;
 
+    if (schema.$ref) {
+      const refType = schema.$ref.split("/").pop();
+      if (refType) {
+        return {
+          type: "type",
+          content: refType,
+        };
+      }
+    }
+
     // 检查是否应该使用type而不是interface
     if (
       !formDataContent &&
@@ -464,11 +534,67 @@ ${indent}};`;
 }
 
 export async function fetchOpenApiSpec() {
-  const response = await axios.get(API_CONFIG.url);
-  if (!response.data || !response.data.openapi) {
-    throw new Error("Invalid OpenAPI specification");
+  const configuredUrl = API_CONFIG.url?.trim();
+
+  if (!configuredUrl) {
+    throw new OpenApiSpecError(
+      createErrorBox(
+        "Missing OpenAPI URL",
+        `
+${chalk.yellow.bold("Fix:")}
+  Define a ${chalk.cyan("url")} in your ${chalk.cyan("apifox.config.*")} file or pass ${chalk.cyan(
+          "--url"
+        )} when running the CLI.`
+      )
+    );
   }
-  return response.data as OpenAPISpec;
+
+  const url = normaliseUrl(configuredUrl);
+
+  try {
+    const response = await axios.get(url);
+
+    if (!response.data || !response.data.openapi) {
+      throw new OpenApiSpecError(
+        buildFetchErrorMessage(url, "Response does not look like an OpenAPI document.", [
+          `Ensure the URL points to an Apifox OpenAPI export endpoint (e.g. ${chalk.cyan(
+            "/export/openapi/2"
+          )}).`,
+          `Check that the project is published or that you have permission to access it.`,
+        ])
+      );
+    }
+
+    return response.data as OpenAPISpec;
+  } catch (error) {
+    if (error instanceof OpenApiSpecError) {
+      throw error;
+    }
+
+    if (axios.isAxiosError(error)) {
+      const suggestions = [
+        `Verify the address above is reachable from this machine.`,
+        `Double-check the URL in ${chalk.cyan("apifox.config.*")} or override it with ${chalk.cyan(
+          "--url"
+        )}.`,
+      ];
+
+      if (error.response?.status === 404) {
+        suggestions.unshift(`The server returned 404. Confirm the export link exists in Apifox.`);
+      }
+
+      throw new OpenApiSpecError(
+        buildFetchErrorMessage(url, describeAxiosFailure(error), suggestions)
+      );
+    }
+
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new OpenApiSpecError(
+      buildFetchErrorMessage(url, reason, [
+        `Check the URL configuration and retry.`,
+      ])
+    );
+  }
 }
 
 export async function generateTypes(options: GenerateOptions) {
@@ -482,6 +608,51 @@ export async function generateTypes(options: GenerateOptions) {
     const paths = spec.paths || {};
     let typeDefinitions = "";
     const processedTypes = new Set<string>();
+
+    const preferredContentTypes = [
+      "application/json",
+      "application/*+json",
+      "text/json",
+      "*/*",
+    ];
+
+    function getSuccessfulResponseSchema(operation: OperationObject) {
+      const responses = operation.responses;
+      if (!responses) return null;
+
+      const candidates = Object.entries(responses).filter(([status]) => {
+        const upper = status.toUpperCase();
+        return /^2\d{2}$/.test(status) || upper === "DEFAULT" || upper === "2XX";
+      });
+
+      const sortByStatus = (status: string) => {
+        if (status.toUpperCase() === "DEFAULT") return Number.MAX_SAFE_INTEGER - 1;
+        if (status.toUpperCase() === "2XX") return Number.MAX_SAFE_INTEGER - 2;
+        const parsed = parseInt(status, 10);
+        return Number.isNaN(parsed) ? Number.MAX_SAFE_INTEGER : parsed;
+      };
+
+      candidates.sort((a, b) => sortByStatus(a[0]) - sortByStatus(b[0]));
+
+      for (const [status, response] of candidates) {
+        if (!response?.content) continue;
+
+        for (const contentType of preferredContentTypes) {
+          const schema = response.content[contentType]?.schema;
+          if (schema) {
+            return { schema, status, contentType } as const;
+          }
+        }
+
+        for (const [contentType, media] of Object.entries(response.content)) {
+          if (media?.schema) {
+            return { schema: media.schema, status, contentType } as const;
+          }
+        }
+      }
+
+      return null;
+    }
 
     // 修改收集逻辑，只收集指定 tag 相关的类型
     function collectReferencedTypes(schema: any, fromTaggedOperation: boolean) {
@@ -530,14 +701,18 @@ export async function generateTypes(options: GenerateOptions) {
 
         // 只有当操作属于指定 tag 时才收集类型
 
-        if (
-          operation.responses?.["200"]?.content?.["application/json"]?.schema ||
-          operation.responses?.["200"]?.content?.["*/*"]?.schema
-        ) {
-          const schema =
-            operation.responses["200"].content["application/json"]?.schema ||
-            operation.responses["200"].content["*/*"]?.schema;
-          collectReferencedTypes(schema, true);
+        const responseSchemaInfo = getSuccessfulResponseSchema(operation);
+        if (responseSchemaInfo) {
+          collectReferencedTypes(responseSchemaInfo.schema, true);
+        }
+
+        if (operation.requestBody?.content) {
+          (Object.values(operation.requestBody.content) as MediaTypeObject[])
+            .map((content) => content?.schema)
+            .filter(Boolean)
+            .forEach((requestSchema) => {
+              collectReferencedTypes(requestSchema, true);
+            });
         }
       }
     }
@@ -707,9 +882,8 @@ export interface ${requestInterfaceName} {
         }
 
         // 修改获取响应schema的逻辑，添加更多的空值检查
-        const responseContent =
-          operation.responses?.["200"]?.content?.["application/json"]?.schema ||
-          operation.responses?.["200"]?.content?.["*/*"]?.schema;
+        const responseSchemaInfo = getSuccessfulResponseSchema(operation);
+        const responseContent = responseSchemaInfo?.schema;
 
         if (responseContent) {
           const schemas = spec.components?.schemas || {};

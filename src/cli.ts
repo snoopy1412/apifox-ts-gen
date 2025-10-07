@@ -1,13 +1,33 @@
 #!/usr/bin/env node
 
+import { relative } from "node:path";
 import inquirer from "inquirer";
 import { Command } from "commander";
-import { fetchOpenApiSpec, generateTypes } from "./core/generator";
+import chalk from "chalk";
+import {
+  fetchOpenApiSpec,
+  generateTypes,
+  OpenApiSpecError,
+} from "./core/generator";
 import { translateText } from "./core/translator";
 import { API_CONFIG, initConfig } from "./config/apiConfig";
 import { generateServices } from "./core/serviceGenerator";
 import { formatModuleName } from "./utils/formatters";
+import { createErrorBox, renderBanner } from "./utils/messages";
 import type { Tag } from "./types/openapi";
+import {
+  PROMPT_PREFIX,
+  PROMPT_SUFFIX,
+  formatModuleChoice,
+  formatModuleLabel,
+  logInfo,
+  logSuccess,
+  logWarn,
+  styleAnswer,
+  stylePathDisplay,
+  stylePromptMessage,
+  styleValidationError,
+} from "./utils/ui";
 
 const program = new Command();
 
@@ -43,11 +63,14 @@ async function batchTranslate(modules: ModuleConfig[], batchSize = 20) {
       batch.map(async (module) => {
         if (!module.englishName) {
           try {
-            module.englishName = await translateText(module.name);
+            const translated = await translateText(module.name);
+            module.englishName = formatModuleName(translated);
           } catch (error) {
             console.error(`Translation failed for ${module.name}:`, error);
-            module.englishName = module.name;
+            module.englishName = formatModuleName(module.name);
           }
+        } else {
+          module.englishName = formatModuleName(module.englishName);
         }
       })
     );
@@ -58,11 +81,25 @@ async function selectModules(nonInteractive = false) {
   try {
     const spec = await fetchOpenApiSpec();
 
-    if (!spec.tags) {
-      throw new Error("No tags found in OpenAPI specification");
+    const tags = Array.isArray(spec.tags) ? spec.tags : [];
+
+    if (tags.length === 0) {
+      throw new OpenApiSpecError(
+        createErrorBox(
+          "No Modules Found",
+          `
+${chalk.yellow.bold("Reason:")}
+  The OpenAPI document does not define any ${chalk.cyan("tags")} entries for Apifox modules.
+
+${chalk.yellow.bold("Fix:")}
+  Add modules in Apifox so every endpoint has a tag, or pass ${chalk.cyan(
+            "--modules"
+          )} to select modules manually.`
+        )
+      );
     }
 
-    const modules: ModuleConfig[] = spec.tags.map((tag: Tag) => ({
+    const modules: ModuleConfig[] = tags.map((tag: Tag) => ({
       name: tag.name,
       selected: false,
     }));
@@ -78,8 +115,15 @@ async function selectModules(nonInteractive = false) {
         .filter(Boolean);
 
       if (!requestedModules.length) {
-        throw new Error(
-          "No modules specified. Provide --modules values or remove --no-interactive to select manually."
+        throw new OpenApiSpecError(
+          createErrorBox(
+            "Missing Modules",
+            `
+${chalk.yellow.bold("Fix:")}
+  Provide at least one tag via ${chalk.cyan("--modules")} or run without ${chalk.cyan(
+              "--no-interactive"
+            )} to pick modules manually.`
+          )
         );
       }
 
@@ -89,10 +133,19 @@ async function selectModules(nonInteractive = false) {
       );
 
       if (unknownModules.length > 0) {
-        throw new Error(
-          `Unknown module tags: ${unknownModules.join(", ")}\nAvailable tags: ${modules
-            .map((module) => module.name)
-            .join(", ")}`
+        const formattedAvailable = modules
+          .map((module) => formatModuleLabel(module.name, module.englishName))
+          .join(chalk.gray(", "));
+        throw new OpenApiSpecError(
+          createErrorBox(
+            "Unknown Modules",
+            `
+${chalk.yellow.bold("Provided:")}
+  ${chalk.red(unknownModules.join(", "))}
+
+${chalk.yellow.bold("Available:")}
+  ${formattedAvailable}`
+          )
         );
       }
 
@@ -115,8 +168,12 @@ async function selectModules(nonInteractive = false) {
       {
         type: "input",
         name: "outputDir",
-        message: "Enter output directory:",
+        message: stylePromptMessage("Enter output directory"),
+        prefix: PROMPT_PREFIX,
+        suffix: PROMPT_SUFFIX,
         default: API_CONFIG.outputDir,
+        transformer: (input: string) =>
+          styleAnswer(input || API_CONFIG.outputDir || ""),
       },
     ]);
 
@@ -125,11 +182,15 @@ async function selectModules(nonInteractive = false) {
       {
         type: "checkbox",
         name: "selectedModules",
-        message: "Select modules to generate types for:",
+        message: stylePromptMessage("Select modules to generate types for"),
+        prefix: PROMPT_PREFIX,
+        suffix: PROMPT_SUFFIX,
+        pageSize: Math.min(12, modules.length || 12),
         choices: modules.map((module) => ({
-          name: `${module.name} (${module.englishName})`,
+          name: formatModuleChoice(module.name, module.englishName),
           value: module.name,
           checked: module.selected,
+          short: formatModuleLabel(module.name, module.englishName),
         })),
       },
     ]);
@@ -146,11 +207,19 @@ async function selectModules(nonInteractive = false) {
           {
             type: "input",
             name: "confirmedName",
-            message: `Confirm or modify English name for "${module.name}":`,
+            message: stylePromptMessage(
+              `Confirm or modify English name for "${module.name}"`
+            ),
+            prefix: PROMPT_PREFIX,
+            suffix: PROMPT_SUFFIX,
             default: module.englishName,
+            transformer: (value: string) =>
+              styleAnswer(value || module.englishName || ""),
             validate: (input: string) => {
               if (!/^[a-zA-Z][a-zA-Z0-9]*$/.test(input)) {
-                return "Name must start with a letter and contain only letters and numbers";
+                return styleValidationError(
+                  "Name must start with a letter and contain only letters and numbers"
+                );
               }
               return true;
             },
@@ -165,8 +234,12 @@ async function selectModules(nonInteractive = false) {
       {
         type: "input",
         name: "typePrefix",
-        message: "Enter type prefix (e.g., Api):",
+        message: stylePromptMessage("Enter type prefix (e.g., Api)"),
+        prefix: PROMPT_PREFIX,
+        suffix: PROMPT_SUFFIX,
         default: API_CONFIG.typePrefix,
+        transformer: (input: string) =>
+          styleAnswer(input || API_CONFIG.typePrefix || ""),
       },
     ]);
 
@@ -176,8 +249,31 @@ async function selectModules(nonInteractive = false) {
       typePrefix,
     };
   } catch (error) {
-    console.error("Error in module selection:", error);
-    throw error;
+    if (error instanceof OpenApiSpecError) {
+      throw error;
+    }
+
+    if (error instanceof Error) {
+      throw new OpenApiSpecError(
+        createErrorBox(
+          "Module Selection Failed",
+          `
+${chalk.yellow.bold("Reason:")}
+  ${chalk.red(error.message)}
+`
+        )
+      );
+    }
+
+    throw new OpenApiSpecError(
+      createErrorBox(
+        "Module Selection Failed",
+        `
+${chalk.yellow.bold("Reason:")}
+  ${chalk.red("Unexpected error during module selection.")}
+`
+      )
+    );
   }
 }
 
@@ -190,8 +286,40 @@ export async function run() {
     API_CONFIG.url = options.url;
   }
 
+  if (process.stdout.isTTY) {
+    const banner = renderBanner("Apifox TypeScript Generator");
+    if (banner) {
+      console.log(banner);
+    }
+  }
+
   const { modules, outputDir, typePrefix } = await selectModules(
     options.interactive === false
+  );
+
+  if (modules.length === 0) {
+    logWarn("未选择任何模块，已退出。");
+    return;
+  }
+
+  const toDisplayPath = (target: string) => {
+    const relativePath = relative(process.cwd(), target);
+    if (!relativePath || relativePath.startsWith("..")) {
+      return target;
+    }
+    return relativePath;
+  };
+
+  logInfo(
+    `输出目录：${stylePathDisplay(toDisplayPath(outputDir))}  ${chalk.gray(
+      "|"
+    )}  类型前缀：${styleAnswer(typePrefix)}`
+  );
+
+  logInfo(
+    `已选择 ${modules.length} 个模块：${modules
+      .map((module) => formatModuleLabel(module.name, module.englishName))
+      .join(chalk.gray(", "))}`
   );
 
   for (const module of modules) {
@@ -202,18 +330,39 @@ export async function run() {
       outputDir,
       typePrefix,
     });
+    logSuccess(
+      `类型定义 ${formatModuleLabel(module.name, module.englishName)} → ${stylePathDisplay(
+        toDisplayPath(typesFile)
+      )}`
+    );
   }
 
-  if (modules.length > 0) {
+  if (API_CONFIG.requestConfig) {
     await generateServices({
       modules: modules.map((module) => ({
         moduleName: module.englishName!,
         tags: [module.name],
       })),
     });
+    logSuccess(
+      `服务文件输出目录：${stylePathDisplay(
+        toDisplayPath(API_CONFIG.requestConfig.servicesPath)
+      )}`
+    );
+  } else {
+    logWarn("requestConfig 未配置，已跳过服务文件生成，仅生成类型定义。");
   }
 }
 
 if (require.main === module) {
-  run().catch(console.error);
+  run().catch((error) => {
+    if (error instanceof OpenApiSpecError) {
+      console.error(error.message);
+    } else if (error instanceof Error) {
+      console.error(error.message);
+    } else {
+      console.error(error);
+    }
+    process.exit(1);
+  });
 }

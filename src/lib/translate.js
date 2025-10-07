@@ -92,9 +92,15 @@ class Client {
 
   static async main(text) {
     const config = await loadConfig();
+    const credentials = config.alibabaCloud || {};
+
+    if (!credentials.accessKeyId || !credentials.accessKeySecret) {
+      return null;
+    }
+
     let client = await Client.createClient(
-      config.alibabaCloud.accessKeyId,
-      config.alibabaCloud.accessKeySecret
+      credentials.accessKeyId,
+      credentials.accessKeySecret
     );
     let params = Client.createApiInfo();
     // body params
@@ -117,8 +123,11 @@ class Client {
 
 async function translateAndConvert(str) {
   const result = await Client.main(str);
+  if (!result) {
+    return str;
+  }
   const newStr = result?.body?.Data?.Translated;
-  return camelCase(newStr) ?? '';
+  return camelCase(newStr) ?? str;
 }
 
 module.exports = {

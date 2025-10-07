@@ -5,21 +5,7 @@ import { readFileSync } from "fs";
 import { resolve, dirname } from "path";
 import type { ApifoxConfig } from "../types/config";
 import { resolveConfigPath } from "../utils/path";
-
-function createErrorBox(title: string, content: string) {
-  const boxWidth = 80;
-  const line = chalk.gray("─".repeat(boxWidth));
-  const padding = " ".repeat(2);
-
-  return `
-${line}
-${padding}${chalk.bgRed.white.bold(" ERROR ")} ${chalk.red.bold(title)}
-${line}
-
-${content}
-
-${line}`;
-}
+import { createErrorBox } from "../utils/messages";
 
 function validateConfig(config: Partial<ApifoxConfig>): config is ApifoxConfig {
   const requiredFields = ["url", "outputDir", "typePrefix"] as const;
@@ -54,10 +40,19 @@ ${chalk.white("};")}
     throw new Error(message);
   }
 
-  if (
-    !config.alibabaCloud?.accessKeyId ||
-    !config.alibabaCloud?.accessKeySecret
-  ) {
+  const accessKeyId = config.alibabaCloud?.accessKeyId?.trim();
+  const accessKeySecret = config.alibabaCloud?.accessKeySecret?.trim();
+
+  if (!accessKeyId && !accessKeySecret) {
+    if (config.alibabaCloud) {
+      console.warn(
+        chalk.yellow(
+          "Alibaba Cloud 翻译未配置或缺少凭证，翻译功能将被跳过。"
+        )
+      );
+    }
+    delete config.alibabaCloud;
+  } else if (!accessKeyId || !accessKeySecret) {
     const message = createErrorBox(
       "Missing Credentials",
       `
@@ -66,18 +61,16 @@ ${chalk.yellow.bold("Required credentials:")}
   ${chalk.red("✖")} ${chalk.cyan("alibabaCloud.accessKeySecret")}
 
 ${chalk.yellow.bold("Solution:")}
-Add the following to your ${chalk.cyan.underline("apifox.config.js")}:
-
-${chalk.magenta("module.exports")} ${chalk.white("= {")}
-  ${chalk.cyan("alibabaCloud")}: {
-    ${chalk.cyan("accessKeyId")}: ${chalk.green('"your-access-key-id"')},
-    ${chalk.cyan("accessKeySecret")}: ${chalk.green('"your-access-key-secret"')}
-  }
-${chalk.white("};")}
-`
+Provide both credentials or remove the ${chalk.cyan("alibabaCloud")}
+block from your ${chalk.cyan.underline("apifox.config.js")}.`
     );
 
     throw new Error(message);
+  } else {
+    config.alibabaCloud = {
+      accessKeyId,
+      accessKeySecret,
+    };
   }
 
   if (config.requestConfig) {
@@ -107,10 +100,6 @@ const defaultConfig: ApifoxConfig = {
   url: "",
   outputDir: "src/types",
   typePrefix: "Api",
-  alibabaCloud: {
-    accessKeyId: "",
-    accessKeySecret: "",
-  },
 };
 
 // 添加检测项目类型的函数
@@ -234,6 +223,11 @@ ${chalk.white("};")}
     }
 
     if (config.requestConfig) {
+      const rawTypesPath = config.requestConfig.typesPath;
+      const preserveTypesPath =
+        typeof rawTypesPath === "string" &&
+        /^[#@]/.test(rawTypesPath.trim());
+
       config.requestConfig = {
         ...config.requestConfig,
         servicesPath: resolveConfigPath(
@@ -241,11 +235,13 @@ ${chalk.white("};")}
           configDir,
           projectRoot
         ),
-        typesPath: resolveConfigPath(
-          config.requestConfig.typesPath,
-          configDir,
-          projectRoot
-        ),
+        typesPath: preserveTypesPath
+          ? rawTypesPath
+          : resolveConfigPath(
+              config.requestConfig.typesPath,
+              configDir,
+              projectRoot
+            ),
       };
     }
 

@@ -18,12 +18,23 @@ export function formatTypeName(
 }
 
 export function formatModuleName(name: string): string {
-  // 使用 lodash 的 camelCase 处理文件名
-  // 例如：
-  // "认证相关" -> "authenticationRelated"
-  // "用户相关" -> "userRelated"
-  // "基础物质" -> "basicSubstance"
-  return camelCase(name);
+  // 使用 lodash 的 camelCase 来生成基础结果，保持与现有输出风格一致
+  const camelized = camelCase(name);
+
+  // 去掉前缀中所有非字母字符，避免以数字或符号开头
+  const sanitized = camelized.replace(/^[^a-zA-Z]+/, "");
+
+  if (sanitized) {
+    return sanitized;
+  }
+
+  // 如果去除后为空但 camelCase 仍有值（通常是纯数字），使用 module 作为安全前缀
+  if (camelized) {
+    return `module${upperFirst(camelized)}`;
+  }
+
+  // 极端情况下（例如输入为空或全部为无法识别的字符），返回默认名称
+  return "module";
 }
 
 export function toCamelCase(str: string): string {

@@ -404,11 +404,19 @@ import { ${orderedHttpMethods.join(", ")} } from "${
 `;
     }
 
-    const typeImportFile = join(
-      requestConfig.typesPath,
-      `${formatModuleName(module.moduleName)}.d`
-    );
-    const typeImportPath = normalizeImportPath(relative(moduleDir, typeImportFile));
+    const typeImportBase = requestConfig.typesPath.trim();
+    let typeImportPath: string;
+
+    if (typeImportBase.startsWith("@") || typeImportBase.startsWith("#")) {
+      const sanitizedBase = typeImportBase.replace(/\/+$/, "");
+      typeImportPath = `${sanitizedBase}/${formatModuleName(module.moduleName)}.d`;
+    } else {
+      const typeImportFile = join(
+        typeImportBase,
+        `${formatModuleName(module.moduleName)}.d`
+      );
+      typeImportPath = normalizeImportPath(relative(moduleDir, typeImportFile));
+    }
 
     fileContent += `import type {
   ${typeList.join(",\n  ")},

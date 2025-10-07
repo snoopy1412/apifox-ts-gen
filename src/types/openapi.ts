@@ -57,7 +57,7 @@ export interface Tag {
 
 export interface OpenAPISpec {
   openapi: string;
-  tags: Tag[];
+  tags?: Tag[];
   paths: {
     [path: string]: PathItemObject;
   };
