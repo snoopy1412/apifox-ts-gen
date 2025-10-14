@@ -47,7 +47,10 @@ export interface PathItemObject {
   post?: OperationObject;
   put?: OperationObject;
   delete?: OperationObject;
+  options?: OperationObject;
+  head?: OperationObject;
   patch?: OperationObject;
+  trace?: OperationObject;
 }
 
 export interface Tag {

@@ -410,9 +410,15 @@ import { ${orderedHttpMethods.join(", ")} } from "${
     if (typeImportBase.startsWith("@") || typeImportBase.startsWith("#")) {
       const sanitizedBase = typeImportBase.replace(/\/+$/, "");
       typeImportPath = `${sanitizedBase}/${formatModuleName(module.moduleName)}.d`;
+    } else if (/^\.{1,2}\//.test(typeImportBase)) {
+      const sanitizedBase = typeImportBase.replace(/\/+$/, "");
+      const combinedPath = `${sanitizedBase}/${formatModuleName(
+        module.moduleName
+      )}.d`;
+      typeImportPath = normalizeImportPath(combinedPath);
     } else {
       const typeImportFile = join(
-        typeImportBase,
+        requestConfig.typesPath.trim(),
         `${formatModuleName(module.moduleName)}.d`
       );
       typeImportPath = normalizeImportPath(relative(moduleDir, typeImportFile));

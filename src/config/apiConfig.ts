@@ -224,9 +224,13 @@ ${chalk.white("};")}
 
     if (config.requestConfig) {
       const rawTypesPath = config.requestConfig.typesPath;
+      const trimmedTypesPath =
+        typeof rawTypesPath === "string" ? rawTypesPath.trim() : "";
       const preserveTypesPath =
-        typeof rawTypesPath === "string" &&
-        /^[#@]/.test(rawTypesPath.trim());
+        trimmedTypesPath.startsWith("@") ||
+        trimmedTypesPath.startsWith("#") ||
+        trimmedTypesPath.startsWith("./") ||
+        trimmedTypesPath.startsWith("../");
 
       config.requestConfig = {
         ...config.requestConfig,
@@ -236,7 +240,7 @@ ${chalk.white("};")}
           projectRoot
         ),
         typesPath: preserveTypesPath
-          ? rawTypesPath
+          ? trimmedTypesPath.replace(/\/+$/, "")
           : resolveConfigPath(
               config.requestConfig.typesPath,
               configDir,

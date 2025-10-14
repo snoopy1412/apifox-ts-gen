@@ -14,7 +14,7 @@ import { API_CONFIG, initConfig } from "./config/apiConfig";
 import { generateServices } from "./core/serviceGenerator";
 import { formatModuleName } from "./utils/formatters";
 import { createErrorBox, renderBanner } from "./utils/messages";
-import type { Tag } from "./types/openapi";
+import type { OpenAPISpec, PathItemObject, Tag } from "./types/openapi";
 import {
   PROMPT_PREFIX,
   PROMPT_SUFFIX,
@@ -49,6 +49,56 @@ interface ModuleConfig {
   selected: boolean;
 }
 
+function collectModuleTags(spec: OpenAPISpec): Tag[] {
+  const moduleMap = new Map<string, Tag>();
+
+  if (Array.isArray(spec.tags)) {
+    for (const tag of spec.tags) {
+      if (!tag || typeof tag.name !== "string") continue;
+      const trimmedName = tag.name.trim();
+      if (!trimmedName) continue;
+      if (!moduleMap.has(trimmedName)) {
+        moduleMap.set(trimmedName, {
+          name: trimmedName,
+          description: tag.description,
+        });
+      }
+    }
+  }
+
+  const pathEntries = spec.paths ?? {};
+  const httpMethods: Array<keyof PathItemObject> = [
+    "get",
+    "put",
+    "post",
+    "delete",
+    "options",
+    "head",
+    "patch",
+    "trace",
+  ];
+
+  for (const pathItem of Object.values(pathEntries)) {
+    if (!pathItem) continue;
+    for (const method of httpMethods) {
+      const operation = (pathItem as PathItemObject)[method];
+      const tags = operation?.tags;
+      if (!Array.isArray(tags)) continue;
+
+      for (const tagName of tags) {
+        if (typeof tagName !== "string") continue;
+        const trimmedName = tagName.trim();
+        if (!trimmedName) continue;
+        if (!moduleMap.has(trimmedName)) {
+          moduleMap.set(trimmedName, { name: trimmedName });
+        }
+      }
+    }
+  }
+
+  return Array.from(moduleMap.values());
+}
+
 // 添加批量处理函数
 async function batchTranslate(modules: ModuleConfig[], batchSize = 20) {
   // 将模块分组
@@ -81,7 +131,7 @@ async function selectModules(nonInteractive = false) {
   try {
     const spec = await fetchOpenApiSpec();
 
-    const tags = Array.isArray(spec.tags) ? spec.tags : [];
+    const tags = collectModuleTags(spec);
 
     if (tags.length === 0) {
       throw new OpenApiSpecError(
@@ -89,7 +139,7 @@ async function selectModules(nonInteractive = false) {
           "No Modules Found",
           `
 ${chalk.yellow.bold("Reason:")}
-  The OpenAPI document does not define any ${chalk.cyan("tags")} entries for Apifox modules.
+  The OpenAPI document does not expose any ${chalk.cyan("tags")} — neither top-level definitions nor endpoint tags.
 
 ${chalk.yellow.bold("Fix:")}
   Add modules in Apifox so every endpoint has a tag, or pass ${chalk.cyan(
