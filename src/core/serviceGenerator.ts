@@ -286,28 +286,28 @@ function generateServiceMethod(
     } else {
       const jsonSchema =
         operation.requestBody?.content?.["application/json"]?.schema;
-      const resolvedSchema = resolveSchema(jsonSchema as Record<string, unknown>, schemas);
+      const resolvedSchema = resolveSchema(
+        jsonSchema as Record<string, unknown>,
+        schemas
+      );
       const schemaForBody = (resolvedSchema ?? jsonSchema) as
         | (Record<string, unknown> & { type?: string })
         | undefined;
 
-      const hasArrayRequestBody =
-        schemaForBody?.type === "array";
       const hasJsonRequestBody = Boolean(schemaForBody);
       const isObjectLikeJsonBody = isObjectLikeSchema(schemaForBody);
 
-      if (hasArrayRequestBody && pathParams.length > 0) {
-        helpers.add("extractArrayBody");
-        requestConfig.push(`    data: extractArrayBody(params)`);
-      } else if (isObjectLikeJsonBody && pathParams.length > 0) {
-        helpers.add("omitParams");
-        requestConfig.push(
-          `    data: omitParams(params, [${pathParams
-            .map((p) => `"${p.name}"`)
-            .join(", ")}])`
-        );
-      } else if (hasJsonRequestBody && pathParams.length > 0) {
-        requestConfig.push(`    data: params?.requestBody`);
+      if (hasJsonRequestBody && pathParams.length > 0) {
+        if (isObjectLikeJsonBody) {
+          helpers.add("omitParams");
+          requestConfig.push(
+            `    data: omitParams(params, [${pathParams
+              .map((p) => `"${p.name}"`)
+              .join(", ")}])`
+          );
+        } else {
+          requestConfig.push(`    data: params?.body`);
+        }
       } else if (pathParams.length > 0) {
         helpers.add("omitParams");
         requestConfig.push(

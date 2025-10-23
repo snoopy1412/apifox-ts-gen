@@ -347,10 +347,17 @@ function shouldUseTypeInsteadOfInterface(schema: any): boolean {
   return false;
 }
 
+interface RequestBodyTypeResult {
+  type: "interface" | "type";
+  content: string;
+  isRefType?: boolean;
+  useBodyProperty?: boolean;
+}
+
 function generateRequestBodyType(
   operation: OperationObject,
   schemas: any
-): { type: "interface" | "type"; content: string } {
+): RequestBodyTypeResult {
   if (!operation.requestBody?.content)
     return { type: "interface", content: "" };
 
@@ -419,6 +426,8 @@ function generateRequestBodyType(
         return {
           type: "type",
           content: refType,
+          isRefType: true,
+          useBodyProperty: false,
         };
       }
     }
@@ -430,6 +439,7 @@ function generateRequestBodyType(
       shouldUseTypeInsteadOfInterface(schema)
     ) {
       let typeContent: string;
+      let useBodyProperty = true;
 
       if (schema.type === "array") {
         if (schema.items.type === "string") {
@@ -452,17 +462,21 @@ ${itemProps}
         } else {
           typeContent = "any[]";
         }
+        useBodyProperty = true;
       } else if (
         ["string", "number", "integer", "boolean"].includes(schema.type)
       ) {
         typeContent = schema.type === "integer" ? "number" : schema.type;
+        useBodyProperty = true;
       } else {
         typeContent = generateTypeProps(schema, "", schemas);
+        useBodyProperty = true;
       }
 
       return {
         type: "type",
         content: typeContent,
+        useBodyProperty,
       };
     }
 
@@ -738,8 +752,11 @@ export async function generateTypes(options: GenerateOptions) {
 
         // 生成请求类型
         if (operation.parameters?.length || operation.requestBody) {
-          const { type: requestBodyType, content: requestBodyProps } =
-            generateRequestBodyType(operation, spec.components?.schemas);
+          const {
+            type: requestBodyType,
+            content: requestBodyProps,
+            isRefType,
+          } = generateRequestBodyType(operation, spec.components?.schemas);
 
           // 处理参数
           let parameterProps = "";
@@ -816,9 +833,31 @@ export type ${requestInterfaceName} = ${requestBodyProps};
           } else {
             // 处理有参数的情况
             if (requestBodyType === "type" && parameterProps) {
-              // 特殊情况：有参数且请求体是简单类型
-              // 我们创建一个包含参数的接口，并添加一个特殊的属性来表示请求体
-              typeDefinitions += `
+              if (isRefType) {
+                typeDefinitions += `
+/**
+ * 接口 [${operation.summary}↗](${path}) 的 **请求类型**
+ *
+ * @分类 [${tag}↗](${path})
+ * @请求头 \`${method.toUpperCase()} ${path}\`
+ * @更新时间 \`${updateTime}\`
+ */
+export interface ${requestInterfaceName} extends ${requestBodyProps} {
+${parameterProps}
+}
+
+`;
+              } else {
+                const bodyProperty = `  /**
+   * 请求体数据
+   */
+  body: ${requestBodyProps};`;
+
+                const interfaceBody = [parameterProps, bodyProperty]
+                  .filter(Boolean)
+                  .join("\n\n");
+
+                typeDefinitions += `
 /**
  * 接口 [${operation.summary}↗](${path}) 的 **请求类型**
  *
@@ -827,15 +866,11 @@ export type ${requestInterfaceName} = ${requestBodyProps};
  * @更新时间 \`${updateTime}\`
  */
 export interface ${requestInterfaceName} {
-${parameterProps}
-
-  /**
-   * 请求体数据
-   */
-  requestBody: ${requestBodyProps};
+${interfaceBody}
 }
 
 `;
+              }
             } else {
               // 普通情况：使用interface
               let allProps = "";
