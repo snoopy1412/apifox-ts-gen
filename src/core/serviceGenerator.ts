@@ -166,6 +166,58 @@ function formatMethodName(method: string, path: string): string {
   return `${methodPrefix}${formattedPathPart}`;
 }
 
+function resolveSchema(
+  schema: Record<string, unknown> | undefined,
+  schemas: Record<string, unknown> | undefined,
+  seen: Set<string> = new Set()
+): Record<string, unknown> | undefined {
+  if (!schema || typeof schema !== "object") {
+    return schema;
+  }
+
+  const ref = (schema as { $ref?: unknown }).$ref;
+  if (typeof ref === "string" && schemas) {
+    const refName = ref.split("/").pop();
+
+    if (!refName || seen.has(refName)) {
+      return schema;
+    }
+
+    const refSchema = schemas[refName] as Record<string, unknown> | undefined;
+    if (!refSchema) {
+      return schema;
+    }
+
+    seen.add(refName);
+    return resolveSchema(refSchema, schemas, seen) ?? refSchema;
+  }
+
+  return schema;
+}
+
+function isObjectLikeSchema(schema: Record<string, unknown> | undefined): boolean {
+  if (!schema || typeof schema !== "object") {
+    return false;
+  }
+
+  if ((schema as { type?: unknown }).type === "object") {
+    return true;
+  }
+
+  const candidate = schema as {
+    properties?: unknown;
+    allOf?: unknown;
+    oneOf?: unknown;
+    anyOf?: unknown;
+  };
+
+  if (candidate.properties || candidate.allOf || candidate.oneOf || candidate.anyOf) {
+    return true;
+  }
+
+  return false;
+}
+
 interface GeneratedMethod {
   code: string;
   helpers: Set<HelperName>;
@@ -179,7 +231,8 @@ function generateServiceMethod(
   method: string,
   operation: OperationObject,
   typePrefix: string,
-  matchedTag: string
+  matchedTag: string,
+  schemas: Record<string, unknown> | undefined
 ): GeneratedMethod {
   const methodName = formatMethodName(method, path);
   const interfaceBaseName = formatTypeName(path, method, typePrefix);
@@ -231,13 +284,30 @@ function generateServiceMethod(
       helpers.add("buildUrlEncoded");
       requestConfig.push(`    data: buildUrlEncoded(params)`);
     } else {
-      const hasRequestBodyProp =
-        operation.requestBody?.content?.["application/json"]?.schema?.type ===
-        "array";
+      const jsonSchema =
+        operation.requestBody?.content?.["application/json"]?.schema;
+      const resolvedSchema = resolveSchema(jsonSchema as Record<string, unknown>, schemas);
+      const schemaForBody = (resolvedSchema ?? jsonSchema) as
+        | (Record<string, unknown> & { type?: string })
+        | undefined;
 
-      if (hasRequestBodyProp && pathParams.length > 0) {
+      const hasArrayRequestBody =
+        schemaForBody?.type === "array";
+      const hasJsonRequestBody = Boolean(schemaForBody);
+      const isObjectLikeJsonBody = isObjectLikeSchema(schemaForBody);
+
+      if (hasArrayRequestBody && pathParams.length > 0) {
         helpers.add("extractArrayBody");
         requestConfig.push(`    data: extractArrayBody(params)`);
+      } else if (isObjectLikeJsonBody && pathParams.length > 0) {
+        helpers.add("omitParams");
+        requestConfig.push(
+          `    data: omitParams(params, [${pathParams
+            .map((p) => `"${p.name}"`)
+            .join(", ")}])`
+        );
+      } else if (hasJsonRequestBody && pathParams.length > 0) {
+        requestConfig.push(`    data: params?.requestBody`);
       } else if (pathParams.length > 0) {
         helpers.add("omitParams");
         requestConfig.push(
@@ -356,7 +426,8 @@ export async function generateServices(options: ServiceGenerateOptions) {
           method,
           operation,
           typePrefix,
-          matchedTag
+          matchedTag,
+          spec.components?.schemas as Record<string, unknown> | undefined
         );
 
         types.add(generated.requestType);
