@@ -226,6 +226,85 @@ interface GeneratedMethod {
   responseType: string;
 }
 
+function formatParamNames(params: { name: string }[]): string {
+  return params.map((param) => `"${param.name}"`).join(", ");
+}
+
+function formatStringLiteral(value: string): string {
+  return JSON.stringify(value);
+}
+
+function buildQueryParamsConfig(
+  queryParams: { name: string }[]
+): string | undefined {
+  if (queryParams.length === 0) {
+    return undefined;
+  }
+
+  const fields = queryParams
+    .map(
+      (param) =>
+        `      ${formatStringLiteral(param.name)}: params?.[${formatStringLiteral(param.name)}],`
+    )
+    .join("\n");
+  return `    params: params ? {\n${fields}\n    } : undefined`;
+}
+
+function buildOmitParamsExpression(
+  helpers: Set<HelperName>,
+  excludedParams: { name: string }[]
+): string {
+  if (excludedParams.length === 0) {
+    return "params";
+  }
+
+  helpers.add("omitParams");
+  return `omitParams(params, [${formatParamNames(excludedParams)}])`;
+}
+
+function buildWriteRequestDataConfig(
+  helpers: Set<HelperName>,
+  contentType: string,
+  operation: OperationObject,
+  schemas: Record<string, unknown> | undefined,
+  excludedParams: { name: string }[]
+): string | undefined {
+  if (!operation.requestBody?.content) {
+    return undefined;
+  }
+
+  const bodyParamsExpression = buildOmitParamsExpression(helpers, excludedParams);
+
+  if (contentType === "multipart/form-data") {
+    helpers.add("buildFormData");
+    return `    data: buildFormData(${bodyParamsExpression})`;
+  }
+
+  if (contentType === "application/x-www-form-urlencoded") {
+    helpers.add("buildUrlEncoded");
+    return `    data: buildUrlEncoded(${bodyParamsExpression})`;
+  }
+
+  const jsonSchema = operation.requestBody.content["application/json"]?.schema;
+  const resolvedSchema = resolveSchema(
+    jsonSchema as Record<string, unknown>,
+    schemas
+  );
+  const schemaForBody = (resolvedSchema ?? jsonSchema) as
+    | (Record<string, unknown> & { type?: string })
+    | undefined;
+
+  if (!schemaForBody) {
+    return `    data: ${bodyParamsExpression}`;
+  }
+
+  if (isObjectLikeSchema(schemaForBody)) {
+    return `    data: ${bodyParamsExpression}`;
+  }
+
+  return `    data: params?.body`;
+}
+
 function generateServiceMethod(
   path: string,
   method: string,
@@ -245,8 +324,7 @@ function generateServiceMethod(
     operation.parameters?.filter((param) => param.in === "path") || [];
   const queryParams =
     operation.parameters?.filter((param) => param.in === "query") || [];
-
-  const hasQueryParams = queryParams.length > 0;
+  const excludedBodyParams = [...pathParams, ...queryParams];
 
   let urlTemplate = path;
   pathParams.forEach((param) => {
@@ -256,11 +334,7 @@ function generateServiceMethod(
     );
   });
 
-  let contentType = getContentType(operation);
-
-  if (["POST", "PUT", "PATCH"].includes(methodUpper) && hasQueryParams) {
-    contentType = "application/x-www-form-urlencoded";
-  }
+  const contentType = getContentType(operation);
 
   const requestConfig: string[] = [];
   requestConfig.push(`    url: \`${urlTemplate}\``);
@@ -277,47 +351,20 @@ function generateServiceMethod(
       requestConfig.push(`    params: params`);
     }
   } else {
-    if (contentType === "multipart/form-data") {
-      helpers.add("buildFormData");
-      requestConfig.push(`    data: buildFormData(params)`);
-    } else if (contentType === "application/x-www-form-urlencoded") {
-      helpers.add("buildUrlEncoded");
-      requestConfig.push(`    data: buildUrlEncoded(params)`);
-    } else {
-      const jsonSchema =
-        operation.requestBody?.content?.["application/json"]?.schema;
-      const resolvedSchema = resolveSchema(
-        jsonSchema as Record<string, unknown>,
-        schemas
-      );
-      const schemaForBody = (resolvedSchema ?? jsonSchema) as
-        | (Record<string, unknown> & { type?: string })
-        | undefined;
+    const queryConfig = buildQueryParamsConfig(queryParams);
+    if (queryConfig) {
+      requestConfig.push(queryConfig);
+    }
 
-      const hasJsonRequestBody = Boolean(schemaForBody);
-      const isObjectLikeJsonBody = isObjectLikeSchema(schemaForBody);
-
-      if (hasJsonRequestBody && pathParams.length > 0) {
-        if (isObjectLikeJsonBody) {
-          helpers.add("omitParams");
-          requestConfig.push(
-            `    data: omitParams(params, [${pathParams
-              .map((p) => `"${p.name}"`)
-              .join(", ")}])`
-          );
-        } else {
-          requestConfig.push(`    data: params?.body`);
-        }
-      } else if (pathParams.length > 0) {
-        helpers.add("omitParams");
-        requestConfig.push(
-          `    data: omitParams(params, [${pathParams
-            .map((p) => `"${p.name}"`)
-            .join(", ")}])`
-        );
-      } else {
-        requestConfig.push(`    data: params`);
-      }
+    const dataConfig = buildWriteRequestDataConfig(
+      helpers,
+      contentType,
+      operation,
+      schemas,
+      excludedBodyParams
+    );
+    if (dataConfig) {
+      requestConfig.push(dataConfig);
     }
   }
 

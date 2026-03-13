@@ -144,6 +144,7 @@ export interface ApiGetUserInfoResponse {
 ## 📄 生成的服务示例
 
 ```typescript
+import type { AxiosRequestConfig } from "axios";
 import { GET } from "@/utils/request";
 import type {
   ApiGetUserInfoRequest,
@@ -155,20 +156,58 @@ import type {
  * @分类 [用户相关↗](/api/user)
  * @请求头 `GET /api/user/info`
  */
-export const getUserInfo = ({
-  params,
-  config,
-}: {
-  params: ApiGetUserInfoRequest;
-  config?: AxiosRequestConfig<ApiGetUserInfoRequest>;
-}) => {
-  return GET<ApiGetUserInfoRequest, AxiosResponse<ApiGetUserInfoResponse>>({
-    url: "/api/user/info",
-    data: params,
-    ...config,
+export const getUserInfo = (
+  params: ApiGetUserInfoRequest,
+  config?: AxiosRequestConfig<ApiGetUserInfoRequest>
+) => {
+  return GET<unknown, ApiGetUserInfoResponse>({
+    url: `/api/user/info`,
+    params: params,
+    config,
   });
 };
 ```
+
+带 query 和请求体的写请求，会按 OpenAPI 原样拆分，不再混发：
+
+```typescript
+import type { AxiosRequestConfig } from "axios";
+import { POST } from "@/utils/request";
+import { omitParams, buildFormData } from "./generatedRequestHelpers";
+import type {
+  ApiPostModelCarbonbomV1ImportRequest,
+  ApiPostModelCarbonbomV1ImportResponse,
+} from "@/types/carbonBom.d";
+
+/**
+ * 导入碳BOM清单
+ * @分类 [1.6 产品碳足迹建模——碳BOM清单↗](/model/carbonbom/v1/import)
+ * @请求头 `POST /model/carbonbom/v1/import`
+ * @contentType multipart/form-data
+ */
+export const postModelCarbonbomV1Import = (
+  params: ApiPostModelCarbonbomV1ImportRequest,
+  config?: AxiosRequestConfig<ApiPostModelCarbonbomV1ImportRequest>
+) => {
+  return POST<unknown, ApiPostModelCarbonbomV1ImportResponse>({
+    url: `/model/carbonbom/v1/import`,
+    params: params
+      ? {
+          "modelId": params?.["modelId"],
+        }
+      : undefined,
+    data: buildFormData(omitParams(params, ["modelId"])),
+    config,
+  });
+};
+```
+
+生成规则可以简单理解成：
+
+- `path` 参数只用于拼 URL。
+- `query` 参数永远进请求配置里的 `params`。
+- `application/json`、`multipart/form-data`、`application/x-www-form-urlencoded` 都按 `requestBody.content` 的真实类型生成 `data`。
+- 没有 `requestBody` 的写请求，不会凭空生成请求体。
 
 ## 📄 支持的配置文件
 

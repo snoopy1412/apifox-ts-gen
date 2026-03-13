@@ -23,6 +23,7 @@
   "scripts": {
     "build": "tsup",
     "dev": "ts-node src/cli.ts --no-interactive",
+    "test": "node --require ts-node/register --test test/**/*.spec.cjs",
     "watch": "tsup --watch",
     "prepublishOnly": "pnpm run build",
     "postversion": "git push && git push --tags"
